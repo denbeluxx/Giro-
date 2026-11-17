@@ -109,7 +109,7 @@ export function Money() {
     <div className="screen"><Header title="Pedaggi" />
       <div className="scroll">
         <div className="list">{people.map((m) => (
-          <div className="row" key={m.id}><Avatar m={m} /><div className="grow"><div className="t">{m.name}{m.id === me.id && <span className="dim"> · tu</span>}</div><div className="s">{m.leftAt ? 'Ha lasciato il gruppo · ' : ''}{(bal.eur[m.id] ?? 0) > 0 ? 'Deve ricevere' : (bal.eur[m.id] ?? 0) < 0 ? 'Deve dare' : 'In pari'}</div></div>
+          <div className="row" key={m.id}><Avatar m={m} /><div className="grow"><div className="t">{m.name}{m.id === me.id && <span className="dim"> · tu</span>}</div>{m.leftAt && <div className="s">Ha lasciato il gruppo</div>}</div>
             <div className={`v strong num ${(bal.eur[m.id] ?? 0) > 0 ? 'pos' : (bal.eur[m.id] ?? 0) < 0 ? 'neg' : ''}`}>{fmtEurSigned(bal.eur[m.id] ?? 0)}</div></div>
         ))}</div>
         <p className="foot">Chi paga il pedaggio lo anticipa per tutti gli occupanti del tratto, sé compreso.</p>

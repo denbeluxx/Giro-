@@ -461,12 +461,6 @@ export function Plan({ mode, edit, redo, at, resume }: { mode: 'plan' | 'record'
   // ============================== Passo 2: chi guida ==============================
   if (step === 1) {
     const cands = presentPeople.filter((m) => !unavailable.includes(m.id))
-    const sKm = suggestion && tour?.km[suggestion.id]
-    const compare = tour && suggestion && driver && driver !== suggestion.id && tour.km[driver] != null && sKm != null && Math.abs(tour.km[driver] - sKm) > 500
-      ? `Con ${byId(suggestion.id)?.name} ${fmtKm(sKm)} · Con ${byId(driver)?.name} ${fmtKm(tour.km[driver])}` : null
-    const best = tour && Object.entries(tour.km).sort((a, b) => a[1] - b[1])[0]
-    const compareIdle = !compare && tour && suggestion && best && best[0] !== suggestion.id && sKm != null && sKm - best[1] > 1000
-      ? `Con ${byId(suggestion.id)?.name} ${fmtKm(sKm)} · Con ${byId(best[0])?.name} ${fmtKm(best[1])}` : null
     const showTourBox = !recording && cands.length > 1
     const why = !driverOk && !undecided ? (recording ? 'Scegli chi ha guidato.' : 'Scegli chi guida, oppure «Da decidere».') : ''
     return (
@@ -474,12 +468,6 @@ export function Plan({ mode, edit, redo, at, resume }: { mode: 'plan' | 'record'
         <div className="scroll has-cta" key="s1">
           <h1 className="title">{recording ? 'Chi ha guidato?' : 'Chi guida?'}</h1>
           <p className="subtitle">{recording ? (edit ? 'I saldi cambiano quando salvi le modifiche.' : 'Il saldo cambia quando registri il viaggio.') : suggestion ? `${suggestion.reason} Decidete voi.` : 'Nessuno dei presenti può guidare: salvate con «Da decidere».'}</p>
-          {showTourBox && <div className="tour-box">
-            {!tour ? <Notice kind="info"><Skel w="80%" h={16} /><div style={{ height: 6 }} /><Skel w="45%" h={13} /></Notice>
-              : (compare ?? compareIdle) ? <Notice kind="info"><b className="num">{compare ?? compareIdle}</b><br /><span className="dim">Giro delle case{hasReturn ? ', andata e ritorno' : ''}{!tour.real ? ' (stima)' : ''}.</span></Notice>
-              : <p className="caption" style={{ margin: '0 6px' }}>Per ognuno, i km del giro delle case{hasReturn ? ' (andata e ritorno)' : ''}{!tour.real ? ', stimati' : ''}.</p>}
-          </div>}
-
           {!recording && presentPeople.length > 1 && <div style={{ marginTop: 14 }}>
             <p className="label">Chi non può guidare questa volta?</p>
             <div className="chips">{presentPeople.map((m) => <button key={m.id} className="chip plain" aria-pressed={unavailable.includes(m.id)} onClick={() => { const on = unavailable.includes(m.id); setUnavailable(on ? unavailable.filter((u) => u !== m.id) : [...unavailable, m.id]); if (!on && driver === m.id) setDriver(null) }}>{m.name}</button>)}</div>
@@ -500,7 +488,7 @@ export function Plan({ mode, edit, redo, at, resume }: { mode: 'plan' | 'record'
                   <Avatar m={m} size={44} />
                   <span style={{ flex: 1, minWidth: 0 }}>
                     <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}><span style={{ fontWeight: 600 }}>{m.name}</span>{suggestion?.id === m.id && <span className="pill accent">Suggerito</span>}</div>
-                    <div className="s num">{off ? 'Non disponibile' : <>Saldo <span className={tone(balShown.km[m.id] ?? 0)}>{fmtKmSigned(balShown.km[m.id] ?? 0)}</span>{showTourBox && (noBase(m.id) ? <> · giro: partenza da definire</> : tour?.km[m.id] != null ? <> · giro {fmtKm(tour.km[m.id])}</> : null)}</>}</div>
+                    <div className="s num">{off ? 'Non disponibile' : <>Saldo <span className={tone(balShown.km[m.id] ?? 0)}>{fmtKmSigned(balShown.km[m.id] ?? 0)}</span>{showTourBox && (noBase(m.id) ? <> · giro: partenza da definire</> : tour?.km[m.id] != null ? <> · giro {tour.real ? '' : '≈'}{fmtKm(tour.km[m.id])}</> : null)}</>}</div>
                   </span>
                   <span className="radio"><Icon n="check" size={15} sw={3} /></span>
                 </button>

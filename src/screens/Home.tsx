@@ -1,7 +1,7 @@
 import { useState } from 'react'
 import { useApp } from '../app'
-import { displayRound, tripEffect } from '../lib/calc'
-import { fmtDate, fmtEur, fmtKm, fmtKmSigned, fmtTime, kmNum, roundKm } from '../lib/format'
+import { displayRound } from '../lib/calc'
+import { fmtDate, fmtEur, fmtKmSigned, fmtTime, kmNum, roundKm } from '../lib/format'
 import { SIM } from '../lib/routing'
 import { store } from '../lib/store'
 import type { Trip } from '../lib/types'
@@ -20,7 +20,6 @@ export function Home() {
   const now = new Date().toISOString()
   const due = planned.filter((t) => t.startsAt < now).reverse()
   const next = planned.find((t) => t.startsAt >= now)
-  const confirmed = data.trips.filter((t) => t.status === 'confirmed')
   const meaning = my > 0 ? 'Hai guidato più della tua quota: il gruppo ti deve dei passaggi.' : my < 0 ? 'Hai usato più passaggi di quanti ne hai dati: tocca a te recuperare.' : 'Sei in pari: hai guidato esattamente la tua quota.'
   const ranked = [...active, ...left].sort((a, b) => (shown[a.id] ?? 0) - (shown[b.id] ?? 0))
   const [, force] = useState(0)
@@ -41,11 +40,6 @@ export function Home() {
       </button>
     )
   }
-  // posizione del proprio saldo rispetto al gruppo, per il cursore luminoso
-  const maxAbs = Math.max(0.1, ...ranked.map((m) => Math.abs(shown[m.id] ?? 0)))
-  const knob = 50 + Math.max(-1, Math.min(1, my / maxAbs)) * 50
-  const last = bal.lastDrove[me.id]
-
   return (
     <div className="screen">
       <div className="nav">
@@ -56,18 +50,13 @@ export function Home() {
         </button>
       </div>
       <div className="scroll has-cta">
-        <button onClick={() => push({ s: 'members' })} style={{ display: 'block' }}><h1 className="title">{data.group.name}</h1></button>
+        <button onClick={() => push({ s: 'members' })} style={{ display: 'block' }}><div className="mono-k">Gruppo</div><h1 className="title">{data.group.name}</h1></button>
 
         <div className={`card hero lit${my > 0 ? ' lit-pos' : my < 0 ? ' lit-neg' : ''}`} style={{ marginTop: 16 }}>
-          <div className="hero-top"><div className="k">Il tuo saldo di guida</div><i className="led" aria-hidden="true" /></div>
+          <div className="k">Il tuo saldo di guida</div>
           <div className="big"><span className="chrome-t num"><Count id={`km-${me.id}`} value={my} format={(v) => { const x = roundKm(v); return `${x > 0 ? '+' : x < 0 ? '−' : ''}${kmNum(x)}` }} /></span><small>km</small></div>
-          <div className="meter" aria-hidden="true"><i className="track" /><i className="zero" /><i className="seg" style={{ left: `${Math.min(knob, 50)}%`, width: `${Math.abs(knob - 50)}%` }} /><i className="knob" style={{ left: `${knob}%` }} /></div>
-          <div className="meter-l" aria-hidden="true"><span>Sotto quota</span><span>0</span><span>Sopra quota</span></div>
           <p className="caption">{meaning}</p>
-          <div className="hero-chips">
-            <button className="hchip" onClick={() => push({ s: 'money' })}><span className="k">Pedaggi<Icon n="chev" size={14} /></span><span className="v">{myEur > 0 ? 'Ti devono ' : myEur < 0 ? 'Devi ' : 'In pari'}{myEur !== 0 && <b className={`num ${myEur > 0 ? 'pos' : 'neg'}`}>{fmtEur(myEur)}</b>}</span></button>
-            <div className="hchip"><span className="k">Ultima guida</span><span className="v">{last ? fmtDate(last) : 'Mai'}</span></div>
-          </div>
+          <button className="hchip" onClick={() => push({ s: 'money' })}><span className="k">Pedaggi<Icon n="chev" size={14} /></span><span className="v">{myEur > 0 ? 'Ti devono ' : myEur < 0 ? 'Devi ' : 'In pari'}{myEur !== 0 && <b className={`num ${myEur > 0 ? 'pos' : 'neg'}`}>{fmtEur(myEur)}</b>}</span></button>
         </div>
 
         {draft && <div className="banner draft" style={{ marginTop: 12 }}>
@@ -83,26 +72,22 @@ export function Home() {
         {next && banner(next, false)}
 
         <div className="section">
-          <div className="section-h"><h2>Saldi di guida · km</h2><button className="link" onClick={() => push({ s: 'members' })}>Membri</button></div>
+          <div className="section-h"><h2>Saldi di guida</h2></div>
           <div className="list">
             {ranked.map((m) => (
               <div className="row" key={m.id}>
                 <Avatar m={m} />
                 <div className="grow"><div className="t">{m.name}{m.id === me.id && <span className="dim"> · tu</span>}</div>
                   <div className="s">{m.leftAt ? 'Ha lasciato il gruppo' : bal.lastDrove[m.id] ? `Ultima guida ${fmtDate(bal.lastDrove[m.id]!)}` : 'Non ha ancora guidato'}</div></div>
-                <div className="vcol">
-                  <div className={`v strong ${tone(shown[m.id] ?? 0)}`}><Count id={`km-row-${m.id}`} value={shown[m.id] ?? 0} format={fmtKmSigned} /></div>
-                  <span className="mini" aria-hidden="true">{(shown[m.id] ?? 0) !== 0 && <i className={(shown[m.id] ?? 0) > 0 ? 'p' : 'n'} style={{ width: `${Math.min(50, Math.abs(shown[m.id] ?? 0) / maxAbs * 50)}%` }} />}</span>
-                </div>
+                <div className={`v strong ${tone(shown[m.id] ?? 0)}`}><Count id={`km-row-${m.id}`} value={shown[m.id] ?? 0} format={fmtKmSigned} /></div>
               </div>
             ))}
           </div>
-          <p className="foot">Positivo: ha guidato più della sua quota. Negativo: ha usato più passaggi. La somma del gruppo è sempre zero.</p>
         </div>
 
         <div className="section tiles">
-          <button className="tile" onClick={() => push({ s: 'history' })}><span className="ic"><Icon n="history" size={26} /></span><span><div className="t">Storico</div><div className="s">{confirmed.length ? `${confirmed.length} ${confirmed.length === 1 ? 'viaggio' : 'viaggi'} · ${fmtKm(confirmed.reduce((a, t) => a + tripEffect(t).realMeters, 0))}` : 'Ancora nessun viaggio'}</div></span></button>
-          <button className="tile" onClick={() => push({ s: 'places' })}><span className="ic"><Icon n="pin" size={26} /></span><span><div className="t">Luoghi</div><div className="s">{data.places.length ? `${data.places.length} salvati` : 'Locali e ritrovi'}</div></span></button>
+          <button className="tile" onClick={() => push({ s: 'history' })}><span className="ic"><Icon n="history" size={26} /></span><span className="t">Storico</span></button>
+          <button className="tile" onClick={() => push({ s: 'places' })}><span className="ic"><Icon n="pin" size={26} /></span><span className="t">Luoghi</span></button>
         </div>
 
         <div className="section">

@@ -238,7 +238,7 @@ export function suggestDriver(members: Member[], presentIds: ID[], unavailableId
   const top = sorted[0], second = sorted[1]
   const first = (m: Member) => m.name.split(' ')[0]
   if (cands.length === 1) return { id: top.id, reason: presentIds.length === 1 ? `C'è solo ${first(top)}.` : `Può guidare solo ${first(top)}.` }
-  if (tenth(second.id) !== tenth(top.id)) return { id: top.id, reason: `${first(top)} ha il saldo più basso tra chi può guidare (${fmtKm(bal.km[top.id] ?? 0)}).` }
+  if (tenth(second.id) !== tenth(top.id)) return { id: top.id, reason: `${first(top)} ha il saldo più basso tra chi può guidare.` }
   if (last(top.id) !== last(second.id)) {
     return { id: top.id, reason: last(top.id) ? `A parità di saldo, ${first(top)} non guida da più tempo.` : `A parità di saldo, ${first(top)} non ha ancora guidato.` }
   }

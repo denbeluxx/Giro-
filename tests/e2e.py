@@ -24,7 +24,7 @@ def hero(pg):
 
 def shot(pg, name): pg.screenshot(path=f'{OUT}/{name}.png')
 def tap(pg, sel, wait=450): pg.click(sel); pg.wait_for_timeout(wait)
-def db(pg): return json.loads(pg.evaluate("localStorage.getItem('giro-demo-v3')"))['groups']['demo-group']
+def db(pg): return json.loads(pg.evaluate("localStorage.getItem('giro-demo-v4')"))['groups']['demo-group']
 
 def new_ctx(b, **kw):
     return b.new_context(viewport={'width': 390, 'height': 844}, device_scale_factor=2, is_mobile=True, has_touch=True, locale='it-IT', timezone_id='Europe/Rome', **kw)
@@ -65,7 +65,7 @@ with sync_playwright() as p:
     shot(pg, '03-chi-guida')
     tap(pg, '[role=radio]:has-text("Alessia")', 350)
     ok(pg.locator('[role=radio][aria-checked=true]').count() == 1 and pg.locator('.cta .btn').is_enabled(), 'un altro conducente si sceglie con un solo tocco, senza conferme')
-    ok('Con Daniele' in pg.inner_text('.notice') and 'Con Alessia' in pg.inner_text('.notice'), 'confronto del giro tra suggerito e scelto')
+    ok('giro' in pg.inner_text('[role=radio]:has-text("Daniele")') and 'giro' in pg.inner_text('[role=radio]:has-text("Alessia")') and pg.locator('.notice').count() == 0, 'km del giro per ognuno, senza riquadri ripetuti')
     shot(pg, '04-chi-guida-scelto')
     tap(pg, 'button:has-text("Continua")', 1600)
     pg.wait_for_selector('.stats b')

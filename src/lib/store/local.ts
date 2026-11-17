@@ -5,7 +5,7 @@ import { uid, type Group, type GroupData, type ID, type Leg, type Member, type P
 import { sanitizeTrips } from '../validate'
 import { ConflictError, type Store } from './types'
 
-const KEY = 'giro-demo-v3'
+const KEY = 'giro-demo-v4'
 interface G { group: Group; members: Member[]; places: Place[]; trips: Trip[]; settlements: GroupData['settlements'] }
 interface DB { groups: Record<ID, G> }
 
@@ -65,7 +65,7 @@ function seed(): DB {
     trip('t-3', day(-9), 'confirmed', 'm-alessia', ['m-daniele', 'm-alessia', 'm-filippo'], places[1], true),
     trip('t-4', day(-1), 'planned', 'm-filippo', ['m-daniele', 'm-matteo', 'm-filippo', 'm-andrea'], places[0]),
   ]
-  return { groups: { [gid]: { group: { id: gid, name: 'Sabato sera', inviteCode: 'demo1234', settings: { tolls } }, members, places, trips, settlements: [] } } }
+  return { groups: { [gid]: { group: { id: gid, name: 'Amici', inviteCode: 'demo1234', settings: { tolls } }, members, places, trips, settlements: [] } } }
 }
 
 const wait = (ms = 220) => new Promise((r) => setTimeout(r, ms))
