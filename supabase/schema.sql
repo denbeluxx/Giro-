@@ -49,6 +49,11 @@ create table if not exists public.trips (
   status text not null check (status in ('planned', 'confirmed', 'cancelled')),
   starts_at timestamptz not null,
   data jsonb not null,              -- destinazione, presenti, tratte, tappe, km, pedaggi
+  constraint trips_data_shape check (coalesce(
+    jsonb_typeof(data) = 'object' and jsonb_typeof(data->'legs') = 'array'
+    and jsonb_typeof(data->'presentIds') = 'array' and jsonb_typeof(data->'dest') = 'object'
+    and jsonb_array_length(case when jsonb_typeof(data->'legs') = 'array' then data->'legs' else '[]' end) between 1 and 2
+    and octet_length(data::text) < 200000, false)),
   version int not null default 1,
   created_by uuid references public.members(id),
   updated_by uuid references public.members(id),
@@ -95,6 +100,9 @@ create policy members_select on public.members for select to authenticated using
 -- a mano si possono aggiungere solo membri senza account; gli account entrano con join_group
 create policy members_insert on public.members for insert to authenticated with check (public.is_member(group_id) and user_id is null);
 create policy members_update on public.members for update to authenticated using (public.is_member(group_id) and user_id = auth.uid()) with check (public.is_member(group_id) and user_id = auth.uid());
+-- i membri aggiunti a mano (senza account) si possono rinominare da chiunque nel gruppo
+drop policy if exists members_update_placeholder on public.members;
+create policy members_update_placeholder on public.members for update to authenticated using (public.is_member(group_id) and user_id is null) with check (public.is_member(group_id) and user_id is null);
 
 drop policy if exists homes_all on public.private_homes;
 create policy homes_all on public.private_homes for all to authenticated using (user_id = auth.uid()) with check (user_id = auth.uid() and public.is_member(group_id));
@@ -111,23 +119,72 @@ create policy trips_update on public.trips for update to authenticated using (pu
 -- nessuna policy di delete: i viaggi si annullano, non si cancellano
 
 drop policy if exists settlements_all on public.settlements;
-create policy settlements_all on public.settlements for all to authenticated using (public.is_member(group_id)) with check (public.is_member(group_id));
+drop policy if exists settlements_select on public.settlements;
+drop policy if exists settlements_insert on public.settlements;
+drop policy if exists settlements_delete on public.settlements;
+create policy settlements_select on public.settlements for select to authenticated using (public.is_member(group_id));
+create policy settlements_insert on public.settlements for insert to authenticated with check (public.is_member(group_id));
+create policy settlements_delete on public.settlements for delete to authenticated using (public.is_member(group_id));
+-- nessuna modifica: un rimborso sbagliato si elimina e si registra di nuovo
+
+-- Colonne modificabili dai client: tutto il resto passa solo dalle funzioni qui sotto o dai trigger.
+revoke insert, update on public.members from authenticated, anon;
+grant insert (group_id, name, color) on public.members to authenticated;
+grant update (name, color, home, home_shared) on public.members to authenticated;
+revoke update on public.groups from authenticated, anon;
+grant update (name, settings) on public.groups to authenticated;
+revoke update on public.trips from authenticated, anon;
+grant update (status, starts_at, data, version, confirmed_at, updated_by) on public.trips to authenticated;
+revoke update on public.settlements from authenticated, anon;
 
 -- ---------------------------------------------------------------------------
 -- Coerenza: una modifica alla volta per viaggio
 -- ---------------------------------------------------------------------------
+-- Chi scrive è sempre il membro collegato: «creato da» e «ultima modifica di» non sono falsificabili.
+create or replace function public.my_member(g uuid) returns uuid
+language sql stable security definer set search_path = public as $$
+  select id from public.members where group_id = g and user_id = auth.uid() and left_at is null
+$$;
+
 create or replace function public.trips_guard() returns trigger language plpgsql as $$
+declare me uuid := public.my_member(new.group_id);
 begin
+  if tg_op = 'INSERT' then
+    new.version := 1;
+    new.updated_at := now();
+    if me is not null then new.created_by := me; new.updated_by := me; end if;
+    new.confirmed_at := case when new.status = 'confirmed' then now() else null end;
+    return new;
+  end if;
   if new.version <> old.version + 1 then
     raise exception 'conflict: il viaggio è stato modificato da un altro dispositivo' using errcode = '40001';
   end if;
-  if new.group_id <> old.group_id then raise exception 'group_id non modificabile'; end if;
+  if new.group_id <> old.group_id or new.id <> old.id or new.created_by is distinct from old.created_by then
+    raise exception 'campo non modificabile';
+  end if;
+  if me is not null then new.updated_by := me; end if;
   new.updated_at := now();
   if new.status = 'confirmed' and old.status <> 'confirmed' then new.confirmed_at := now(); end if;
+  if new.status <> 'confirmed' and old.status = 'confirmed' and new.status <> 'cancelled' then new.confirmed_at := old.confirmed_at; end if;
   return new;
 end $$;
 drop trigger if exists trips_guard on public.trips;
-create trigger trips_guard before update on public.trips for each row execute function public.trips_guard();
+create trigger trips_guard before insert or update on public.trips for each row execute function public.trips_guard();
+
+-- Rimborsi solo tra membri dello stesso gruppo, mai a se stessi; autore = chi lo registra.
+create or replace function public.settlements_guard() returns trigger language plpgsql as $$
+begin
+  if new.from_member = new.to_member then raise exception 'Un rimborso non può essere verso se stessi'; end if;
+  if not exists (select 1 from public.members where id = new.from_member and group_id = new.group_id)
+     or not exists (select 1 from public.members where id = new.to_member and group_id = new.group_id) then
+    raise exception 'Il rimborso deve essere tra membri del gruppo';
+  end if;
+  new.created_by := coalesce(public.my_member(new.group_id), new.created_by);
+  new.created_at := now();
+  return new;
+end $$;
+drop trigger if exists settlements_guard on public.settlements;
+create trigger settlements_guard before insert on public.settlements for each row execute function public.settlements_guard();
 
 create or replace function public.members_guard() returns trigger language plpgsql as $$
 begin
@@ -158,6 +215,7 @@ language sql stable security definer set search_path = public as $$
   select jsonb_build_object(
     'group_id', g.id, 'name', g.name,
     'already_member', exists (select 1 from public.members m where m.group_id = g.id and m.user_id = auth.uid() and m.left_at is null),
+    'rejoin_name', (select m.name from public.members m where m.group_id = g.id and m.user_id = auth.uid() and m.left_at is not null limit 1),
     'unclaimed', coalesce((select jsonb_agg(jsonb_build_object('id', m.id, 'name', m.name) order by m.joined_at)
                            from public.members m where m.group_id = g.id and m.user_id is null and m.left_at is null), '[]'::jsonb))
   from public.groups g where g.invite_code = p_code and auth.uid() is not null
@@ -179,6 +237,7 @@ begin
     update public.members set user_id = auth.uid() where id = p_claim and group_id = g and user_id is null and left_at is null;
     get diagnostics n = row_count;
     if n > 0 then return g; end if;
+    raise exception 'Questo nome è appena stato scelto da un altro account. Scegli di nuovo.';
   end if;
   select count(*) into n from public.members where group_id = g;
   insert into public.members(group_id, user_id, name, color) values (g, auth.uid(), p_name, n % 8);
@@ -193,8 +252,29 @@ begin
   delete from public.private_homes where group_id = p_group and user_id = auth.uid();
 end $$;
 
-revoke all on function public.create_group(text, text), public.invite_preview(text), public.join_group(text, text, uuid), public.leave_group(uuid) from public, anon;
-grant execute on function public.create_group(text, text), public.invite_preview(text), public.join_group(text, text, uuid), public.leave_group(uuid), public.is_member(uuid) to authenticated;
+-- Toglie dal gruppo un membro aggiunto a mano (senza account). Resta nello storico dei viaggi.
+create or replace function public.remove_placeholder(p_member uuid) returns void
+language plpgsql security definer set search_path = public as $$
+declare g uuid;
+begin
+  select group_id into g from public.members where id = p_member and user_id is null;
+  if g is null or not public.is_member(g) then raise exception 'Si possono togliere solo i membri senza account'; end if;
+  perform set_config('giro.rpc', '1', true);
+  update public.members set left_at = now() where id = p_member;
+end $$;
+
+-- Nuovo link di invito: il vecchio smette di funzionare.
+create or replace function public.regenerate_invite(p_group uuid) returns text
+language plpgsql security definer set search_path = public as $$
+declare c text := encode(gen_random_bytes(9), 'hex');
+begin
+  if not public.is_member(p_group) then raise exception 'accesso negato'; end if;
+  update public.groups set invite_code = c where id = p_group;
+  return c;
+end $$;
+
+revoke all on function public.create_group(text, text), public.invite_preview(text), public.join_group(text, text, uuid), public.leave_group(uuid), public.regenerate_invite(uuid), public.my_member(uuid), public.remove_placeholder(uuid) from public, anon;
+grant execute on function public.create_group(text, text), public.invite_preview(text), public.join_group(text, text, uuid), public.leave_group(uuid), public.regenerate_invite(uuid), public.is_member(uuid), public.my_member(uuid), public.remove_placeholder(uuid) to authenticated;
 
 -- ---------------------------------------------------------------------------
 -- Aggiornamenti in tempo reale tra dispositivi

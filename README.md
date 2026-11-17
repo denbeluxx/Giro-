@@ -21,7 +21,7 @@ Senza configurazione l'app parte in **modalità dimostrativa**: dati di esempio 
 3. **Authentication → Emails → Magic Link**: nel corpo dell'email aggiungi il codice, per esempio
    `Il tuo codice di accesso: {{ .Token }}`.
    È importante: su iPhone l'app installata sulla Home non riceve i link aperti da Mail, mentre il codice a 6 cifre funziona sempre.
-4. **Authentication → URL Configuration**: imposta *Site URL* con l'indirizzo pubblico dell'app (punto 2).
+4. **Authentication → URL Configuration**: imposta *Site URL* con l'indirizzo pubblico dell'app (punto 2) e aggiungilo anche tra le *Redirect URLs*.
 5. **Project Settings → API**: copia *Project URL* e chiave *anon public*.
 
 **Necessario per gli amici:** l'invio email incluso in Supabase spedisce solo ai membri del team del progetto e al massimo 2 email l'ora. Per far accedere gli amici collega un servizio SMTP gratuito (es. Brevo o Resend) da *Authentication → SMTP Settings*: il limite sale a 30 email l'ora, modificabile.
@@ -53,8 +53,8 @@ La chiave *anon* è pubblica per progetto: la protezione dei dati è nelle regol
 
 | Parte | Stato |
 |---|---|
-| Regole dei km, quote, pedaggi, rimborsi, suggerimento | **Verificate** con 24 test automatici (`npm test`) |
-| Schema del database, accessi, inviti, concorrenza | **Verificati** su Postgres con 21 controlli (`node tests/schema.check.mjs`) |
+| Regole dei km, quote, pedaggi, rimborsi, suggerimento, giro delle case | **Verificate** con 40 test automatici (`npm test`) |
+| Schema del database, accessi, inviti, concorrenza, protezioni contro manomissioni | **Verificati** su Postgres con 32 controlli (`node tests/schema.check.mjs`) |
 | Interfaccia e flussi | **Verificati** in Chrome con viewport iPhone, 38 controlli (`python3 tests/e2e.py`), tema chiaro/scuro e «Riduci movimento» |
 | Percorsi stradali (OSRM) e ricerca (Photon) | Codice completo, lettura della risposta testata su dati di esempio. **Non provati dal vivo**: l'ambiente di sviluppo non poteva raggiungere quei server. Da provare al primo avvio. |
 | Supabase reale (email, tempo reale tra telefoni) | Schema provato su Postgres; **collegamento a un progetto Supabase vero non ancora provato**. |
@@ -81,6 +81,16 @@ Servizi usati, tutti gratuiti e senza chiavi: tessere mappa CARTO su dati OpenSt
 - Per ogni tratto tra due tappe: al conducente i km ponderati, a ogni occupante (conducente compreso) una quota uguale. Chi sale o scende lungo il percorso paga solo i suoi tratti.
 - I saldi non sono salvati: sono ricalcolati ogni volta dai viaggi confermati e dai rimborsi. Modifiche e annullamenti restano quindi coerenti e la somma del gruppo è sempre zero (arrotondamento al metro e al centesimo con resto distribuito).
 - Un viaggio conta una sola volta: identificativo generato dal dispositivo (un reinvio non duplica) e numero di versione controllato dal database (una seconda conferma o una modifica superata viene rifiutata e l'app ricarica).
+
+## Collaudo
+
+Oltre ai test automatici, la versione è stata usata a fondo da 8 agenti di collaudo (flusso, conducente, km, pedaggi, mappa, conferma e storico, grafica e accessibilità, sicurezza). I problemi trovati sono stati corretti in quattro blocchi: saldi, sicurezza, flusso, grafica.
+
+Protezioni principali:
+- un membro può modificare solo nome, colore e casa propri; «creato da» e «ultima modifica di» li scrive il database;
+- i viaggi con dati malformati vengono rifiutati dal database e ignorati dall'app;
+- rimborsi solo tra membri dello stesso gruppo; il link di invito si può rigenerare;
+- la casa non condivisa non entra mai nei percorsi.
 
 ## Struttura
 

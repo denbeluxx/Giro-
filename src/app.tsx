@@ -1,4 +1,4 @@
-import { createContext, useCallback, useContext, useEffect, useMemo, useRef, useState, type ReactNode } from 'react'
+import { Component, createContext, useCallback, useContext, useEffect, useMemo, useRef, useState, type ReactNode } from 'react'
 import { flushSync } from 'react-dom'
 import { balances, type Balances } from './lib/calc'
 import { ConflictError, store, type GroupSummary, type InvitePreview, type Session } from './lib/store'
@@ -11,12 +11,20 @@ import { Btn, Empty, Icon, Notice, Skel, ToastHost, reducedMotion, useBusy, useT
 
 export type Route =
   | { s: 'home' } | { s: 'members' } | { s: 'places' } | { s: 'history' } | { s: 'money' }
-  | { s: 'plan'; mode: 'plan' | 'record'; edit?: Trip; redo?: Trip }
+  | { s: 'plan'; mode: 'plan' | 'record'; edit?: Trip; redo?: Trip; at?: 0 | 1 | 2; resume?: boolean }
   | { s: 'trip'; id: ID; fresh?: boolean }
 
 interface Ctx {
   data: GroupData; bal: Balances; me: Member; byId: (id?: ID | null) => Member | undefined; active: Member[]
   reload: () => Promise<void>; push: (r: Route) => void; pop: () => void; replace: (r: Route) => void; home: () => void
+  /** Aggiunge un livello alla cronologia (es. un passo del flusso), così il tasto Indietro del telefono lo annulla. */
+  forward: () => void
+  /** Registra chi gestisce il tasto Indietro prima del cambio di schermata; restituisce la funzione per toglierlo. */
+  onBack: (fn: () => boolean) => () => void
+  /** Esce dalla schermata corrente togliendo anche n livelli della cronologia (es. i passi di un flusso). */
+  leave: (n: number) => void
+  /** Toglie n livelli della cronologia senza cambiare schermata. */
+  collapse: (n: number) => void
   /** Salva un viaggio; se un altro dispositivo l'ha già cambiato ricarica e avvisa. */
   saveTrip: (t: Trip, expected: number | null) => Promise<Trip | null>
   groups: GroupSummary[]; switchGroup: (id: ID | null) => void; signOut: () => void
@@ -37,6 +45,9 @@ export function getTheme(): Theme { try { return (localStorage.getItem('giro-the
 export function setTheme(t: Theme) {
   try { localStorage.setItem('giro-theme', t) } catch { /* */ }
   if (t === 'auto') delete document.documentElement.dataset.theme; else document.documentElement.dataset.theme = t
+  // colore della barra di stato coerente con il tema scelto
+  const dark = t === 'dark' || (t === 'auto' && matchMedia('(prefers-color-scheme: dark)').matches)
+  document.querySelectorAll('meta[name="theme-color"]').forEach((m) => { m.setAttribute('content', dark ? '#000000' : '#f2f2f7'); m.removeAttribute('media') })
   window.dispatchEvent(new Event('giro-theme'))
 }
 
@@ -76,7 +87,19 @@ export function App() {
   else if (!groups) body = <Splash />
   else if (!groupId) body = <Groups groups={groups} onOpen={switchGroup} onCreated={async (id) => { await loadGroups(); switchGroup(id) }} />
   else body = <GroupProvider key={groupId} groupId={groupId} groups={groups} switchGroup={switchGroup} deepTrip={deepTrip} clearDeep={() => { setDeepTrip(null); clearParams() }} />
-  return <ToastHost><div className="app">{body}</div></ToastHost>
+  return <ToastHost><div className="app"><Guard>{body}</Guard></div></ToastHost>
+}
+
+/** Se qualcosa si rompe durante il disegno di una schermata, l'app mostra un messaggio invece di una pagina bianca. */
+class Guard extends Component<{ children: ReactNode }, { err: Error | null }> {
+  state = { err: null as Error | null }
+  static getDerivedStateFromError(err: Error) { return { err } }
+  componentDidCatch(err: Error) { console.error('Errore di interfaccia', err) }
+  render() {
+    if (!this.state.err) return this.props.children
+    return <div className="screen"><div className="scroll" style={{ paddingTop: 120 }}><Empty icon="alert" title="Qualcosa non ha funzionato" text="Questa schermata non si è caricata. I dati salvati non sono stati toccati.">
+      <Btn onClick={() => { this.setState({ err: null }); window.location.reload() }}>Ricarica l'app</Btn></Empty></div></div>
+  }
 }
 
 function Splash() {
@@ -95,12 +118,48 @@ function GroupProvider({ groupId, groups, switchGroup, deepTrip, clearDeep }: { 
     catch (e: any) { if (n === seq.current) setErr(e?.message ?? 'Errore') }
   }, [groupId])
   useEffect(() => { reload(); return store.subscribe(groupId, reload) }, [groupId, reload])
-  useEffect(() => { if (data && deepTrip) { if (data.trips.some((t) => t.id === deepTrip)) setStack([{ s: 'home' }, { s: 'trip', id: deepTrip }]); clearDeep() } }, [data, deepTrip]) // eslint-disable-line react-hooks/exhaustive-deps
+  useEffect(() => { if (data && deepTrip) { if (data.trips.some((t) => t.id === deepTrip)) { forward(); setStack([{ s: 'home' }, { s: 'trip', id: deepTrip }]) } else toast('Questa uscita non è più disponibile.'); clearDeep() } }, [data, deepTrip]) // eslint-disable-line react-hooks/exhaustive-deps
 
-  const push = useCallback((r: Route) => transition('push', () => setStack((s) => [...s, r])), [])
-  const pop = useCallback(() => transition('pop', () => setStack((s) => (s.length > 1 ? s.slice(0, -1) : s))), [])
+  // ---- Navigazione legata alla cronologia: il tasto o il gesto Indietro del telefono torna indietro di un livello ----
+  const level = useRef(0)
+  const goingHome = useRef(false)
+  const pending = useRef<null | 'leave' | 'collapse'>(null)
+  const handlers = useRef<(() => boolean)[]>([])
+  const popStack = useCallback(() => transition('pop', () => setStack((s) => (s.length > 1 ? s.slice(0, -1) : s))), [])
+  useEffect(() => {
+    try { history.replaceState({ d: 0 }, '') } catch { /* */ }
+    const onPop = (e: PopStateEvent) => {
+      const d = typeof e.state?.d === 'number' ? e.state.d : 0
+      if (goingHome.current) { goingHome.current = false; level.current = d; transition('pop', () => setStack([{ s: 'home' }])); return }
+      if (pending.current) { const k = pending.current; pending.current = null; level.current = d; if (k === 'leave') popStack(); return }
+      if (d >= level.current) { level.current = d; return }
+      level.current = d
+      const h = handlers.current[handlers.current.length - 1]
+      if (h && h()) return
+      popStack()
+    }
+    window.addEventListener('popstate', onPop)
+    return () => window.removeEventListener('popstate', onPop)
+  }, [popStack])
+  const forward = useCallback(() => { level.current += 1; try { history.pushState({ d: level.current }, '') } catch { /* */ } }, [])
+  const onBack = useCallback((fn: () => boolean) => { handlers.current.push(fn); return () => { handlers.current = handlers.current.filter((h) => h !== fn) } }, [])
+  const push = useCallback((r: Route) => { forward(); transition('push', () => setStack((s) => [...s, r])) }, [forward])
+  const pop = useCallback(() => { if (level.current > 0) history.back(); else popStack() }, [popStack])
+  const leave = useCallback((n: number) => {
+    const k = Math.min(n, level.current)
+    if (k <= 0) return popStack()
+    pending.current = 'leave'; history.go(-k)
+  }, [popStack])
+  const collapse = useCallback((n: number) => {
+    const k = Math.min(n, level.current)
+    if (k <= 0) return
+    pending.current = 'collapse'; history.go(-k)
+  }, [])
   const replace = useCallback((r: Route) => transition('fade', () => setStack((s) => [...s.slice(0, -1), r])), [])
-  const home = useCallback(() => transition('pop', () => setStack([{ s: 'home' }])), [])
+  const home = useCallback(() => {
+    if (level.current > 0) { goingHome.current = true; history.go(-level.current) }
+    else transition('pop', () => setStack([{ s: 'home' }]))
+  }, [])
   const saveTrip = useCallback(async (t: Trip, expected: number | null) => {
     try {
       const saved = await store.saveTrip(t, expected)
@@ -117,10 +176,10 @@ function GroupProvider({ groupId, groups, switchGroup, deepTrip, clearDeep }: { 
     const map = new Map(data.members.map((m) => [m.id, m]))
     return {
       data, bal: balances(data.members, data.trips, data.settlements), me: map.get(data.meId)!, byId: (id) => (id ? map.get(id) : undefined),
-      active: data.members.filter((m) => !m.leftAt), reload, push, pop, replace, home, saveTrip, groups, switchGroup,
+      active: data.members.filter((m) => !m.leftAt), reload, push, pop, replace, home, forward, onBack, leave, collapse, saveTrip, groups, switchGroup,
       signOut: () => { store.signOut() },
     }
-  }, [data, reload, push, pop, replace, home, saveTrip, groups, switchGroup])
+  }, [data, reload, push, pop, replace, home, forward, onBack, leave, collapse, saveTrip, groups, switchGroup])
 
   if (err && !data) return <div className="screen"><div className="scroll" style={{ paddingTop: 120 }}><Empty icon="alert" title="Gruppo non disponibile" text={err}><Btn onClick={reload}>Riprova</Btn><div style={{ height: 10 }} /><Btn kind="gray" onClick={() => switchGroup(null)}>I miei gruppi</Btn></Empty></div></div>
   if (!ctx) return <Splash />
@@ -132,7 +191,7 @@ function GroupProvider({ groupId, groups, switchGroup, deepTrip, clearDeep }: { 
       {r.s === 'places' && <Places />}
       {r.s === 'history' && <History />}
       {r.s === 'money' && <Money />}
-      {r.s === 'plan' && <Plan key={r.edit?.id ?? r.redo?.id ?? 'new'} mode={r.mode} edit={r.edit} redo={r.redo} />}
+      {r.s === 'plan' && <Plan key={`${r.edit?.id ?? r.redo?.id ?? 'new'}-${stack.length}`} mode={r.mode} edit={r.edit} redo={r.redo} at={r.at} resume={r.resume} />}
       {r.s === 'trip' && <TripView key={r.id} id={r.id} fresh={r.fresh} />}
     </C.Provider>
   )
@@ -187,7 +246,7 @@ function Groups({ groups, onOpen, onCreated }: { groups: GroupSummary[]; onOpen:
           <Btn busy={busy} disabled={!name.trim() || !me.trim()}>Crea gruppo</Btn>
         </form>
       </div>
-      <div style={{ height: 20 }} /><Btn kind="danger" onClick={() => store.signOut()}>Esci</Btn>
+      {store.mode === 'cloud' && <><div style={{ height: 20 }} /><Btn kind="danger" onClick={() => store.signOut()}>Esci da questo dispositivo</Btn></>}
     </div></div>
   )
 }
@@ -206,16 +265,16 @@ function Invite({ code, done }: { code: string; done: (groupId: ID | null) => vo
     <div className="screen"><div className="scroll" style={{ paddingTop: 'calc(var(--sat) + 64px)' }}>
       <p className="caption" style={{ textTransform: 'uppercase', fontWeight: 600, letterSpacing: '.03em' }}>Invito al gruppo</p>
       <h1 className="title">{p.name}</h1>
-      <p className="subtitle" style={{ marginBottom: 24 }}>Entri con saldo zero: i viaggi già fatti non ti vengono attribuiti.</p>
-      {p.unclaimed.length > 0 && <>
+      <p className="subtitle" style={{ marginBottom: 24 }}>{p.rejoinName ? `Bentornato, ${p.rejoinName}: ritrovi il tuo saldo di prima.` : claim ? 'Ti colleghi al nome scelto, con il suo saldo attuale.' : 'Entri con saldo zero: i viaggi già fatti non ti vengono attribuiti.'}</p>
+      {!p.rejoinName && p.unclaimed.length > 0 && <>
         <p className="label">Sei già in elenco?</p>
         <div className="chips" style={{ marginBottom: 20 }}>
           {p.unclaimed.map((m) => <button key={m.id} className="chip plain" aria-pressed={claim === m.id} onClick={() => setClaim(claim === m.id ? null : m.id)}>Sono {m.name}</button>)}
         </div>
       </>}
-      {!claim && <><label className="label" htmlFor="nm">Il tuo nome</label><input id="nm" className="field" value={name} onChange={(e) => setName(e.target.value)} maxLength={40} autoComplete="given-name" placeholder="Come ti chiamano gli amici" /></>}
+      {!claim && !p.rejoinName && <><label className="label" htmlFor="nm">Il tuo nome</label><input id="nm" className="field" value={name} onChange={(e) => setName(e.target.value)} maxLength={40} autoComplete="given-name" placeholder="Come ti chiamano gli amici" /></>}
       <div style={{ height: 20 }} />
-      <Btn busy={busy} disabled={!claim && !name.trim()} onClick={() => run(async () => done(await store.joinGroup(code, name.trim(), claim)))}>Entra nel gruppo</Btn>
+      <Btn busy={busy} disabled={!claim && !p.rejoinName && !name.trim()} onClick={() => run(async () => { try { done(await store.joinGroup(code, name.trim() || p.rejoinName || 'Amico', claim)) } catch (e) { setClaim(null); load(); throw e } })}>{p.rejoinName ? 'Rientra nel gruppo' : 'Entra nel gruppo'}</Btn>
       {store.mode === 'demo' && <><div style={{ height: 14 }} /><Notice kind="info">Modalità dimostrativa: i dati restano solo su questo dispositivo.</Notice></>}
     </div></div>
   )

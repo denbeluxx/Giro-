@@ -11,6 +11,8 @@ def ok(cond, msg):
         print('✗', msg); sys.exit(1)
     passed.append(msg); print('✓', msg)
 
+def norm(t): return t.replace('\u00a0', ' ')
+
 def num(s):
     m = re.search(r'([+−-]?)\s*(\d+(?:,\d+)?)', s)
     v = float(m.group(2).replace(',', '.'))
@@ -26,6 +28,11 @@ def db(pg): return json.loads(pg.evaluate("localStorage.getItem('giro-demo-v2')"
 
 def new_ctx(b, **kw):
     return b.new_context(viewport={'width': 390, 'height': 844}, device_scale_factor=2, is_mobile=True, has_touch=True, locale='it-IT', timezone_id='Europe/Rome', **kw)
+
+def leave_flow(pg):
+    pg.go_back(); pg.wait_for_timeout(400); pg.go_back(); pg.wait_for_timeout(400)
+    pg.click('.nav .nav-btn'); pg.wait_for_timeout(400)
+    if pg.locator('.sheet button:has-text("Elimina la bozza")').count(): tap(pg, '.sheet button:has-text("Elimina la bozza")', 700)
 
 def plan_to(pg, place, driver=None, search=None, mode='Organizza uscita', only=None):
     tap(pg, f'text={mode}', 600)
@@ -88,7 +95,7 @@ with sync_playwright() as p:
 
     # --- Conducente da decidere ---
     plan_to(pg, 'Setai')
-    tap(pg, '[role=radio]:has-text("Conducente da decidere")', 300)
+    tap(pg, '[role=radio]:has-text("Da decidere")', 300)
     tap(pg, 'button:has-text("Continua")', 900)
     tap(pg, 'button:has-text("Salva uscita")', 1200)
     tap(pg, '.sheet-h .nav-btn', 400)
@@ -112,20 +119,20 @@ with sync_playwright() as p:
     # --- A4 coperta: pedaggio compilato da solo ---
     plan_to(pg, 'Navigli', driver='Luca', only=['Andrea', 'Luca'])
     tap(pg, 'button:has-text("Continua")', 1600); pg.wait_for_selector('.stats b')
-    ok('Pedaggio 4,40 €' in pg.inner_text('.stats'), 'tratta A4 coperta: importo compilato senza digitare nulla')
+    ok('Pedaggio 4,40 €' in norm(pg.inner_text('.stats')), 'tratta A4 coperta: importo compilato senza digitare nulla')
     shot(pg, '14-pedaggio-a4')
     tap(pg, '.grab', 500)
     tap(pg, 'button:has-text("Pedaggio e pagante")', 500); shot(pg, '15-pedaggio-dettaglio')
     ok(pg.locator('.sheet select').first.input_value() == 'seriate', 'caselli riconosciuti e correggibili')
     tap(pg, '.sheet-h .nav-btn', 400)
-    tap(pg, '.float-top .nav-btn', 500); tap(pg, '.nav .nav-btn', 500); tap(pg, '.nav .nav-btn', 700)
+    leave_flow(pg)
 
     # --- A35: fuori copertura ---
     plan_to(pg, 'Treviglio', driver='Marco', search='trevi')
     tap(pg, 'button:has-text("Continua")', 1600); pg.wait_for_selector('.stats b')
-    ok('Fuori copertura' in pg.inner_text('.stats') and 'A35' in pg.inner_text('.panel-body'), 'A35 indicata come fuori copertura')
+    ok('fuori copertura' in pg.inner_text('.stats').lower() and 'A35' in pg.inner_text('.panel-body'), 'A35 indicata come fuori copertura')
     shot(pg, '16-a35-fuori-copertura')
-    tap(pg, '.float-top .nav-btn', 500); tap(pg, '.nav .nav-btn', 500); tap(pg, '.nav .nav-btn', 700)
+    leave_flow(pg)
 
     # --- Registrazione diretta con flag: 2 + 2 km => ×3 ---
     plan_to(pg, 'Setai', driver='Andrea', mode='Registra un viaggio già fatto', only=['Andrea', 'Sara'])
@@ -135,12 +142,12 @@ with sync_playwright() as p:
     for i in (0, 1):
         pg.fill(f'#km-{i}', '2'); tap(pg, f'.sheet [role=switch] >> nth={i}', 200)
     foot = ' '.join(pg.locator('.sheet .foot').all_inner_texts())
-    ok(foot.count('×3') == 2 and foot.count('6,0 km') == 2, '2 + 2 km con flag: ×3, 12 km validi')
+    foot = norm(foot); ok(foot.count('×3') == 2 and foot.count('6,0 km') == 2, '2 + 2 km con flag: ×3, 12 km validi')
     pg.fill('#km-0', '4,9'); pg.fill('#km-1', '0')
-    ok('14,7 km' in pg.locator('.sheet .foot').first.inner_text(), '4,9 km con flag: 14,7 km validi')
+    ok('14,7 km' in norm(pg.locator('.sheet .foot').first.inner_text()), '4,9 km con flag: 14,7 km validi')
     pg.fill('#km-0', '2,5'); pg.fill('#km-1', '2,5')
     foot = ' '.join(pg.locator('.sheet .foot').all_inner_texts())
-    ok(foot.count('×2') == 2 and foot.count('5,0 km') == 2, '5 km esatti con flag: ×2, 10 km validi')
+    foot = norm(foot); ok(foot.count('×2') == 2 and foot.count('5,0 km') == 2, '5 km esatti con flag: ×2, 10 km validi')
     pg.fill('#km-0', '2'); pg.fill('#km-1', '2')
     shot(pg, '17-chilometri-flag')
     tap(pg, '.sheet .btn:has-text("Fatto")', 500)
@@ -234,7 +241,7 @@ with sync_playwright() as p:
     pg.wait_for_selector('.notice:has-text("Il servizio dei percorsi non risponde")', timeout=20000)
     ok(pg.locator('.stop').count() >= 2, 'routing non raggiungibile: tappe e scelte conservate, con «Riprova» e inserimento manuale')
     tap(pg, '.grab', 500); shot(pg, '29-errore-percorso')
-    tap(pg, 'button:has-text("Inserisco i km a mano")', 500)
+    tap(pg, 'button:has-text("Inserisci i km a mano")', 500)
     ok('linea d\'aria' in pg.inner_text('.panel-body'), 'la stima è dichiarata come tale, mai come percorso reale')
     shot(pg, '30-km-manuali')
     c4.close(); b.close()

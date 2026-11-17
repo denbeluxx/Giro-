@@ -6,13 +6,13 @@ import type { Pt } from '../lib/types'
 import { reducedMotion } from './kit'
 
 export interface MapStop extends Pt { label: string; end?: boolean; title?: string }
-interface Props { stops?: MapStop[]; geometry?: [number, number][] | null; dots?: Pt[]; padBottom?: number; padTop?: number; interactive?: boolean }
+interface Props { stops?: MapStop[]; geometry?: [number, number][] | null; dots?: Pt[]; destDot?: (Pt & { name?: string }) | null; padBottom?: number; padTop?: number; interactive?: boolean }
 
 const isDark = () => getComputedStyle(document.documentElement).colorScheme.includes('dark')
 const TILES = { light: 'https://{s}.basemaps.cartocdn.com/rastertiles/voyager/{z}/{x}/{y}{r}.png', dark: 'https://{s}.basemaps.cartocdn.com/dark_all/{z}/{x}/{y}{r}.png' }
 
 /** Mappa con percorso e tappe numerate. Si adatta al percorso lasciando libero lo spazio coperto dai pannelli. */
-export function MapView({ stops = [], geometry, dots = [], padBottom = 24, padTop = 24, interactive = true }: Props) {
+export function MapView({ stops = [], geometry, dots = [], destDot = null, padBottom = 24, padTop = 24, interactive = true }: Props) {
   const el = useRef<HTMLDivElement>(null)
   const map = useRef<L.Map | null>(null)
   const layer = useRef<L.LayerGroup | null>(null)
@@ -37,7 +37,7 @@ export function MapView({ stops = [], geometry, dots = [], padBottom = 24, padTo
     return () => { ro.disconnect(); mq.removeEventListener('change', setTiles); window.removeEventListener('giro-theme', setTiles); m.remove() }
   }, [interactive])
 
-  const sig = JSON.stringify([stops.map((s) => [s.lat, s.lng, s.label, s.end]), geometry?.length, geometry?.[0], dots])
+  const sig = JSON.stringify([stops.map((s) => [s.lat, s.lng, s.label, s.end]), geometry?.length, geometry?.[0], dots, destDot && [destDot.lat, destDot.lng]])
   useEffect(() => {
     const m = map.current, g = layer.current
     if (!m || !g) return
@@ -50,6 +50,7 @@ export function MapView({ stops = [], geometry, dots = [], padBottom = 24, padTo
       pts.push(...geometry)
     }
     for (const d of dots) { L.marker([d.lat, d.lng], { interactive: false, icon: L.divIcon({ className: '', html: '<div class="pin dot"></div>', iconSize: [14, 14], iconAnchor: [7, 7] }) }).addTo(g); pts.push([d.lat, d.lng]) }
+    if (destDot) { L.marker([destDot.lat, destDot.lng], { interactive: false, keyboard: false, icon: L.divIcon({ className: '', html: '<div class="pin end"></div>', iconSize: [28, 28], iconAnchor: [14, 14] }) }).addTo(g); pts.push([destDot.lat, destDot.lng]) }
     stops.forEach((s) => {
       L.marker([s.lat, s.lng], { interactive: false, keyboard: false, title: s.title, icon: L.divIcon({ className: '', html: `<div class="pin${s.end ? ' end' : ''}">${s.label}</div>`, iconSize: [28, 28], iconAnchor: [14, 14] }) }).addTo(g)
       pts.push([s.lat, s.lng])

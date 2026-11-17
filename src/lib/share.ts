@@ -1,4 +1,4 @@
-import { fmtDateLong } from './format'
+import { fmtDateLong, fmtTime } from './format'
 import type { Leg, Member, Trip } from './types'
 
 export function tripLink(tripId: string): string {
@@ -13,7 +13,7 @@ export function inviteLink(code: string): string {
 function legLines(leg: Leg, name: (id: string) => string): string[] {
   return leg.stops.map((s, i) => {
     const bits: string[] = []
-    if (i === 0 && leg.time) bits.push(`ore ${leg.time}`)
+    if (i === 0 && leg.driverId) bits.push(`parte ${name(leg.driverId)}`)
     if (s.on.length) bits.push(`sale ${s.on.map(name).join(', ')}`)
     if (s.off.length && i < leg.stops.length - 1) bits.push(`scende ${s.off.map(name).join(', ')}`)
     return `${i + 1}. ${s.name}${bits.length ? ` (${bits.join(' · ')})` : ''}`
@@ -24,14 +24,17 @@ function legLines(leg: Leg, name: (id: string) => string): string[] {
 export function shareText(trip: Trip, members: Member[]): string {
   const name = (id: string) => members.find((m) => m.id === id)?.name.split(' ')[0] ?? '?'
   const [go, back] = [trip.legs.find((l) => l.kind === 'andata'), trip.legs.find((l) => l.kind === 'ritorno')]
-  const out: string[] = [`🚗 *${trip.dest.name}* · ${fmtDateLong(trip.startsAt)}`]
+  const date = fmtDateLong(trip.startsAt).replace(/^./, (c) => c.toUpperCase())
+  const out: string[] = [`🚗 *${trip.dest.name}*`, `${date}, partenza alle ${fmtTime(trip.startsAt)}`]
   out.push(`Guida: ${go?.driverId ? name(go.driverId) : 'da decidere'}`)
   if (go && go.stops.length > 1) out.push('', '*Andata*', ...legLines(go, name))
   if (back) {
     const who = back.driverId ? (back.driverId === go?.driverId ? '' : ` · guida ${name(back.driverId)}`) : ' · conducente da decidere'
-    const mirrored = go && back.stops.length === go.stops.length && back.stops.every((s, i) => s.name === go.stops[go.stops.length - 1 - i].name)
-    if (mirrored || back.stops.length < 2) out.push('', `*Ritorno*${back.time ? ` ore ${back.time}` : ''}: stesse tappe al contrario${who}`)
-    else out.push('', `*Ritorno*${who}`, ...legLines(back, name))
+    const at = back.time ? ` alle ${back.time}` : ''
+    const mirrored = go && go.stops.length > 1 && back.stops.length === go.stops.length && back.stops.every((s, i) => s.name === go.stops[go.stops.length - 1 - i].name)
+    if (back.stops.length < 2) out.push('', `*Ritorno*${at}${who}: tappe da definire`)
+    else if (mirrored) out.push('', `*Ritorno*${at}: stesse tappe al contrario${who}`)
+    else out.push('', `*Ritorno*${at}${who}`, ...legLines(back, name))
   } else out.push('', 'Ritorno: non previsto in questa uscita')
   out.push('', `Dettagli: ${tripLink(trip.id)}`)
   return out.join('\n')

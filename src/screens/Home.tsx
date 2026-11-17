@@ -1,33 +1,39 @@
+import { useState } from 'react'
 import { useApp } from '../app'
-import { tripEffect } from '../lib/calc'
-import { fmtDate, fmtEur, fmtKm, fmtKmSigned, fmtTime, kmNum } from '../lib/format'
+import { displayRound, tripEffect } from '../lib/calc'
+import { fmtDate, fmtEur, fmtKm, fmtKmSigned, fmtTime, kmNum, roundKm } from '../lib/format'
 import { SIM } from '../lib/routing'
 import { store } from '../lib/store'
 import type { Trip } from '../lib/types'
 import { Avatar, Btn, Count, Icon } from '../ui/kit'
+import { clearDraft, loadDraft } from './Plan'
 
-export const tone = (v: number) => (Math.round(v / 100) > 0 ? 'pos' : Math.round(v / 100) < 0 ? 'neg' : 'dim')
+export const tone = (v: number) => (roundKm(v) > 0 ? 'pos' : roundKm(v) < 0 ? 'neg' : 'dim')
 
 export function Home() {
   const { data, bal, me, active, push, byId } = useApp()
-  const my = bal.km[me.id] ?? 0, myEur = bal.eur[me.id] ?? 0
+  // saldi arrotondati al decimo con somma visibile zero; compare anche chi ha lasciato il gruppo con un saldo aperto
+  const shown = displayRound(bal.km)
+  const left = data.members.filter((m) => m.leftAt && (shown[m.id] ?? 0) !== 0)
+  const my = shown[me.id] ?? 0, myEur = bal.eur[me.id] ?? 0
   const planned = data.trips.filter((t) => t.status === 'planned').sort((a, b) => (a.startsAt < b.startsAt ? -1 : 1))
   const now = new Date().toISOString()
-  const due = planned.find((t) => t.startsAt < now)
+  const due = planned.filter((t) => t.startsAt < now).reverse()
   const next = planned.find((t) => t.startsAt >= now)
   const confirmed = data.trips.filter((t) => t.status === 'confirmed')
-  const r = Math.round(my / 100)
-  const meaning = r > 0 ? 'Hai guidato più della tua quota: il gruppo ti deve dei passaggi.' : r < 0 ? 'Hai usato più passaggi di quanti ne hai dati: tocca a te recuperare.' : 'Sei in pari: hai guidato esattamente la tua quota.'
-  const ranked = [...active].sort((a, b) => (bal.km[a.id] ?? 0) - (bal.km[b.id] ?? 0))
+  const meaning = my > 0 ? 'Hai guidato più della tua quota: il gruppo ti deve dei passaggi.' : my < 0 ? 'Hai usato più passaggi di quanti ne hai dati: tocca a te recuperare.' : 'Sei in pari: hai guidato esattamente la tua quota.'
+  const ranked = [...active, ...left].sort((a, b) => (shown[a.id] ?? 0) - (shown[b.id] ?? 0))
+  const [, force] = useState(0)
+  const draft = loadDraft(data.group.id)
 
-  const banner = (t: Trip, hot: boolean) => {
+  const banner = (t: Trip, hot: boolean, extra?: number) => {
     const d = byId(t.legs[0]?.driverId)
     return (
-      <button className={`banner${hot ? ' hot' : ''}`} onClick={() => push({ s: 'trip', id: t.id })} style={{ viewTransitionName: `trip-${t.id}`, marginTop: 12 }}>
+      <button key={t.id} className={`banner${hot ? ' hot' : ''}`} onClick={() => push({ s: 'trip', id: t.id })} style={{ marginTop: 12 }}>
         <span className="ic"><Icon n={hot ? 'check' : 'clock'} size={24} /></span>
         <span className="grow" style={{ flex: 1, minWidth: 0 }}>
-          <div style={{ fontWeight: 600 }}>{hot ? 'Conferma il viaggio' : 'Prossima uscita'}</div>
-          <div className="s" style={{ fontSize: 14, color: hot ? undefined : 'var(--text2)' }}>{t.dest.name} · {fmtDate(t.startsAt)}{hot ? '' : ` ${fmtTime(t.startsAt)}`} · {d ? `guida ${d.name}` : 'conducente da decidere'}</div>
+          <div style={{ fontWeight: 600 }}>{hot ? 'Conferma il viaggio' : 'Prossima uscita'}{extra ? <span className="banner-count"> · altri {extra}</span> : null}</div>
+          <div className="s">{t.dest.name} · {fmtDate(t.startsAt)} {fmtTime(t.startsAt)} · {d ? `guida ${d.name}` : 'conducente da decidere'}</div>
         </span>
         <Icon n="chev" size={18} />
       </button>
@@ -48,11 +54,19 @@ export function Home() {
 
         <div className="card hero" style={{ marginTop: 16 }}>
           <div className="k">Il tuo saldo di guida</div>
-          <div className={`big ${tone(my)}`}><Count id={`km-${me.id}`} value={my} format={(v) => { const x = Math.round(v / 100) * 100; return `${x > 0 ? '+' : x < 0 ? '−' : ''}${kmNum(x)}` }} /><small>km</small></div>
+          <div className={`big ${tone(my)}`}><Count id={`km-${me.id}`} value={my} format={(v) => { const x = roundKm(v); return `${x > 0 ? '+' : x < 0 ? '−' : ''}${kmNum(x)}` }} /><small>km</small></div>
           <p className="caption" style={{ fontSize: 15 }}>{meaning}</p>
         </div>
 
-        {due && banner(due, true)}
+        {draft && <div className="banner draft" style={{ marginTop: 12 }}>
+          <span className="ic"><Icon n="edit" size={22} /></span>
+          <button className="grow" style={{ flex: 1, minWidth: 0, textAlign: 'left' }} onClick={() => push({ s: 'plan', mode: draft.mode, resume: true })}>
+            <div style={{ fontWeight: 600 }}>Riprendi l'uscita in preparazione</div>
+            <div className="s">{draft.dest?.name ?? 'Destinazione da scegliere'} · {draft.present.length} {draft.present.length === 1 ? 'persona' : 'persone'}</div>
+          </button>
+          <button className="nav-btn" aria-label="Elimina la bozza" onClick={() => { clearDraft(data.group.id); force((x) => x + 1) }}><Icon n="x" size={20} /></button>
+        </div>}
+        {due.slice(0, 2).map((t, i) => banner(t, true, i === 1 && due.length > 2 ? due.length - 2 : undefined))}
         {next && banner(next, false)}
 
         <div className="section">
@@ -62,8 +76,8 @@ export function Home() {
               <div className="row" key={m.id}>
                 <Avatar m={m} />
                 <div className="grow"><div className="t">{m.name}{m.id === me.id && <span className="dim"> · tu</span>}</div>
-                  <div className="s">{bal.lastDrove[m.id] ? `Ultima guida ${fmtDate(bal.lastDrove[m.id]!)}` : 'Non ha ancora guidato'}</div></div>
-                <div className={`v ${tone(bal.km[m.id] ?? 0)}`} style={{ fontWeight: 600 }}><Count id={`km-row-${m.id}`} value={bal.km[m.id] ?? 0} format={fmtKmSigned} /></div>
+                  <div className="s">{m.leftAt ? 'Ha lasciato il gruppo' : bal.lastDrove[m.id] ? `Ultima guida ${fmtDate(bal.lastDrove[m.id]!)}` : 'Non ha ancora guidato'}</div></div>
+                <div className={`v strong ${tone(shown[m.id] ?? 0)}`}><Count id={`km-row-${m.id}`} value={shown[m.id] ?? 0} format={fmtKmSigned} /></div>
               </div>
             ))}
           </div>
@@ -73,7 +87,7 @@ export function Home() {
         <div className="section">
           <button className="list" style={{ width: '100%' }} onClick={() => push({ s: 'money' })}>
             <span className="row">
-              <span className="avatar" style={{ width: 36, height: 36, background: 'var(--accent-soft)', color: 'var(--accent)' }}><Icon n="euro" size={20} /></span>
+              <span className="avatar ic-tile"><Icon n="euro" size={20} /></span>
               <span className="grow"><div className="t">Pedaggi</div><div className="s">{myEur > 0 ? 'Ti devono' : myEur < 0 ? 'Devi' : 'Sei in pari'}{myEur !== 0 && <b className={`num ${myEur > 0 ? 'pos' : 'neg'}`}> {fmtEur(myEur)}</b>}</div></span>
               <span className="chev"><Icon n="chev" size={18} /></span>
             </span>
@@ -87,8 +101,8 @@ export function Home() {
 
         <div className="section">
           <div className="list"><button className="row" onClick={() => push({ s: 'plan', mode: 'record' })}>
-            <span className="avatar" style={{ width: 36, height: 36, background: 'var(--fill)', color: 'var(--text)' }}><Icon n="plus" size={20} /></span>
-            <span className="grow"><div className="t">Registra un viaggio già fatto</div></span><span className="chev"><Icon n="chev" size={18} /></span>
+            <span className="avatar ic-tile gray"><Icon n="plus" size={20} /></span>
+            <span className="grow"><div className="t wrap-t">Registra un viaggio già fatto</div></span><span className="chev"><Icon n="chev" size={18} /></span>
           </button></div>
         </div>
       </div>

@@ -63,7 +63,10 @@ export function matchGates(entry: Pt, exit: Pt, tollMeters: number): { from: Gat
       if (t.id === f.id) continue
       const dt = haversine(exit, t)
       if (dt > 5000) continue
-      const score = df + dt + Math.abs(tollMeters - Math.abs(f.km - t.km) * 1000)
+      const gap = Math.abs(tollMeters - Math.abs(f.km - t.km) * 1000)
+      // se il tratto a pagamento è molto più lungo della distanza tra i caselli, l'uscita è un'altra
+      if (gap > Math.max(2500, Math.abs(f.km - t.km) * 1000 * 0.15)) continue
+      const score = df + dt + gap
       if (!best || score < best.score) best = { from: f, to: t, score }
     }
   }
@@ -96,7 +99,11 @@ export function analyzeOsrmLeg(leg: OsrmLeg, groupTolls?: Record<string, GroupTo
     const tollPts = (st.intersections ?? []).filter((i) => i.classes?.includes('toll'))
     if (!tollPts.length) continue
     meters += st.distance
-    for (const r of (st.ref ?? '').split(/[;,]/).map((s) => s.trim()).filter((s) => /^A\d+/.test(s))) refs.add(r.split(' ')[0])
+    const tokens = (st.ref ?? '').split(/[;,/]/).map((x) => x.replace(/\s+/g, '').toUpperCase()).filter(Boolean)
+    const aRefs = tokens.map((x) => x.match(/^A\d+/)?.[0]).filter((x): x is string => !!x)
+    for (const r of aRefs) refs.add(r)
+    // la E64 coincide con l'A4 tra Milano e Brescia: se manca la sigla A la deduciamo
+    if (!aRefs.length && tokens.includes('E64')) refs.add('A4')
     const first = tollPts[0].location, last = tollPts[tollPts.length - 1].location
     if (!entry) entry = { lat: first[1], lng: first[0] }
     exit = { lat: last[1], lng: last[0] }
@@ -111,4 +118,20 @@ export function analyzeOsrmLeg(leg: OsrmLeg, groupTolls?: Record<string, GroupTo
   const m = matchGates(entry, exit, meters)
   if (!m) return { status: 'out', cents: null, road: 'A4', note: 'A4 fuori dal tratto Milano Est – Brescia Ovest' }
   return a4Toll(m.from.id, m.to.id, groupTolls)
+}
+
+/** Riapplica le tariffe confermate dal gruppo ai pedaggi A4 già riconosciuti (per le uscite ancora in programma). */
+export function refreshTolls<L extends { segs: { meters: number; seconds: number; toll: Toll }[] | null; tollOverride: number | null }>(legs: L[], groupTolls?: Record<string, GroupToll>): L[] {
+  return legs.map((l) => {
+    if (!l.segs || l.tollOverride != null) return l
+    let changed = false
+    const segs = l.segs.map((s) => {
+      if (s.toll.road !== 'A4' || !s.toll.from || !s.toll.to || s.toll.status === 'out') return s
+      const fresh = a4Toll(s.toll.from, s.toll.to, groupTolls)
+      if (fresh.cents === s.toll.cents && fresh.status === s.toll.status) return s
+      changed = true
+      return { ...s, toll: fresh }
+    })
+    return changed ? { ...l, segs } : l
+  })
 }

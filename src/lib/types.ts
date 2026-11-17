@@ -59,6 +59,7 @@ export interface Leg {
   actualMeters: number | null // km effettivi corretti a mano
   tollPayerId: ID | null // null = paga il conducente
   tollOverride: number | null // centesimi inseriti a mano per l'intera tratta
+  tollGates?: { from: string; to: string } | null // caselli scelti a mano
 }
 
 export interface Trip {

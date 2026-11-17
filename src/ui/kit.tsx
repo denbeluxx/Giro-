@@ -67,10 +67,21 @@ export function Sheet({ title, onClose, children, footer }: { title: string; onC
   const drag = useRef<{ y: number; dy: number } | null>(null)
   const close = useCallback(() => { if (reducedMotion()) return onClose(); setOut(true); setTimeout(onClose, 220) }, [onClose])
   useEffect(() => {
-    const k = (e: KeyboardEvent) => e.key === 'Escape' && close()
+    const before = document.activeElement as HTMLElement | null
+    const k = (e: KeyboardEvent) => {
+      if (e.key === 'Escape') return close()
+      if (e.key !== 'Tab' || !ref.current) return
+      // il fuoco resta dentro il foglio
+      const f = [...ref.current.querySelectorAll<HTMLElement>('button:not([disabled]), a[href], input:not([disabled]), select, [tabindex]:not([tabindex="-1"])')]
+      if (!f.length) return
+      const first = f[0], last = f[f.length - 1]
+      if (e.shiftKey && document.activeElement === first) { e.preventDefault(); last.focus() }
+      else if (!e.shiftKey && document.activeElement === last) { e.preventDefault(); first.focus() }
+    }
     window.addEventListener('keydown', k)
-    ref.current?.focus()
-    return () => window.removeEventListener('keydown', k)
+    // se un campo ha già il fuoco (autoFocus) lo lasciamo: su iPhone apre la tastiera
+    if (ref.current && !ref.current.contains(document.activeElement)) ref.current.focus()
+    return () => { window.removeEventListener('keydown', k); if (before && document.contains(before)) before.focus({ preventScroll: true }) }
   }, [close])
   const down = (e: React.PointerEvent) => { drag.current = { y: e.clientY, dy: 0 }; (e.target as Element).setPointerCapture(e.pointerId) }
   const move = (e: React.PointerEvent) => {

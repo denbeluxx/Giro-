@@ -6,7 +6,7 @@ export class ConflictError extends Error {
 
 export interface Session { userId: string; email?: string }
 export interface GroupSummary { id: ID; name: string }
-export interface InvitePreview { groupId: ID; name: string; unclaimed: { id: ID; name: string }[]; alreadyMember: boolean }
+export interface InvitePreview { groupId: ID; name: string; unclaimed: { id: ID; name: string }[]; alreadyMember: boolean; rejoinName: string | null }
 
 export interface Store {
   /** 'demo' = dati dimostrativi salvati solo su questo dispositivo. */
@@ -22,6 +22,8 @@ export interface Store {
   previewInvite(code: string): Promise<InvitePreview>
   joinGroup(code: string, myName: string, claimId?: ID | null): Promise<ID>
   leaveGroup(groupId: ID): Promise<void>
+  /** Nuovo link di invito: il vecchio smette di funzionare. */
+  regenerateInvite(groupId: ID): Promise<string>
 
   /** Gruppo a cui appartiene un viaggio (per i link condivisi). */
   findTripGroup(tripId: ID): Promise<ID | null>
@@ -35,6 +37,9 @@ export interface Store {
   savePlace(groupId: ID, p: Place): Promise<void>
   deletePlace(groupId: ID, id: ID): Promise<void>
   addMember(groupId: ID, name: string): Promise<void>
+  /** Solo per i membri aggiunti a mano, senza account. */
+  renameMember(groupId: ID, id: ID, name: string): Promise<void>
+  removeMember(groupId: ID, id: ID): Promise<void>
   updateMe(groupId: ID, patch: { name?: string; home?: Member['home']; homeShared?: boolean }): Promise<void>
   updateGroup(groupId: ID, patch: { name?: string; settings?: GroupSettings }): Promise<Group>
 }

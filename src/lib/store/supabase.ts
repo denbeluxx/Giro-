@@ -1,10 +1,30 @@
 import { createClient, type SupabaseClient } from '@supabase/supabase-js'
 import type { Group, GroupData, Member, Place, Settlement, Trip } from '../types'
+import { sanitizeTrips } from '../validate'
 import { ConflictError, type Store } from './types'
 
+/** Messaggi del database tradotti in italiano comprensibile. */
+export function friendly(msg: string): string {
+  const m = msg.toLowerCase()
+  if (m.includes('failed to fetch') || m.includes('networkerror') || m.includes('load failed') || m.includes('aborted')) return 'Connessione assente o lenta: riprova tra poco. I dati inseriti restano qui.'
+  if (m.includes('jwt') || m.includes('not authenticated') || m.includes('accesso richiesto')) return 'Sessione scaduta: accedi di nuovo. Le uscite in preparazione restano salvate.'
+  if (m.includes('trips_data_shape')) return 'Il viaggio contiene dati non validi e non è stato salvato.'
+  if (m.includes('permission denied') || m.includes('row-level security') || m.includes('accesso negato')) return 'Non hai i permessi per questa modifica.'
+  if (m.includes('duplicate key')) return 'Questa voce esiste già.'
+  if (m.includes('check constraint')) return 'Alcuni valori non sono validi.'
+  // i messaggi scritti da noi nello schema sono già in italiano
+  return /[àèéìòù]|questo|rimborso|invito|nome/i.test(msg) ? msg : 'Qualcosa non ha funzionato. Riprova.'
+}
 const must = <T,>(r: { data: T | null; error: { message: string } | null }): T => {
-  if (r.error) throw new Error(r.error.message)
+  if (r.error) throw new Error(friendly(r.error.message))
   return r.data as T
+}
+/** Ogni richiesta al database si interrompe dopo 15 secondi invece di restare appesa. */
+const timedFetch: typeof fetch = (input, init) => {
+  const ctl = new AbortController()
+  const t = setTimeout(() => ctl.abort(), 15000)
+  init?.signal?.addEventListener('abort', () => ctl.abort())
+  return fetch(input, { ...init, signal: ctl.signal }).finally(() => clearTimeout(t))
 }
 const toMember = (r: any): Member => ({ id: r.id, groupId: r.group_id, userId: r.user_id, name: r.name, color: r.color ?? 0, home: r.home, homeShared: !!r.home_shared, joinedAt: r.joined_at, leftAt: r.left_at })
 const toGroup = (r: any): Group => ({ id: r.id, name: r.name, inviteCode: r.invite_code, settings: r.settings ?? {} })
@@ -15,16 +35,16 @@ const tripRow = (t: Trip) => ({
 })
 
 export function supabaseStore(url: string, key: string): Store {
-  const sb: SupabaseClient = createClient(url, key, { auth: { persistSession: true, autoRefreshToken: true, detectSessionInUrl: true } })
+  const sb: SupabaseClient = createClient(url, key, { auth: { persistSession: true, autoRefreshToken: true, detectSessionInUrl: true }, global: { fetch: timedFetch } })
   const uidOrThrow = async () => { const { data } = await sb.auth.getSession(); if (!data.session) throw new Error('Sessione scaduta: accedi di nuovo'); return data.session.user.id }
 
   return {
     mode: 'cloud',
     async session() { const { data } = await sb.auth.getSession(); return data.session ? { userId: data.session.user.id, email: data.session.user.email } : null },
     onAuth(cb) { const { data } = sb.auth.onAuthStateChange((_e, s) => cb(s ? { userId: s.user.id, email: s.user.email } : null)); return () => data.subscription.unsubscribe() },
-    async sendCode(email) { const { error } = await sb.auth.signInWithOtp({ email, options: { shouldCreateUser: true, emailRedirectTo: window.location.href } }); if (error) throw new Error(error.message) },
+    async sendCode(email) { const { error } = await sb.auth.signInWithOtp({ email, options: { shouldCreateUser: true, emailRedirectTo: window.location.href } }); if (error) throw new Error(friendly(error.message)) },
     async verifyCode(email, code) { const { error } = await sb.auth.verifyOtp({ email, token: code, type: 'email' }); if (error) throw new Error('Codice non valido o scaduto') },
-    async signOut() { await sb.auth.signOut() },
+    async signOut() { await sb.auth.signOut({ scope: 'local' }) }, // esce solo da questo dispositivo
 
     async listGroups() {
       const me = await uidOrThrow()
@@ -35,10 +55,11 @@ export function supabaseStore(url: string, key: string): Store {
     async previewInvite(code) {
       const d = must(await sb.rpc('invite_preview', { p_code: code })) as any
       if (!d) throw new Error('Invito non valido o scaduto')
-      return { groupId: d.group_id, name: d.name, unclaimed: d.unclaimed ?? [], alreadyMember: !!d.already_member }
+      return { groupId: d.group_id, name: d.name, unclaimed: d.unclaimed ?? [], alreadyMember: !!d.already_member, rejoinName: d.rejoin_name ?? null }
     },
     async joinGroup(code, myName, claimId) { return must(await sb.rpc('join_group', { p_code: code, p_name: myName, p_claim: claimId ?? null })) as string },
     async leaveGroup(groupId) { must(await sb.rpc('leave_group', { p_group: groupId })) },
+    async regenerateInvite(groupId) { return must(await sb.rpc('regenerate_invite', { p_group: groupId })) as string },
 
     async findTripGroup(tripId) { const r = await sb.from('trips').select('group_id').eq('id', tripId).maybeSingle(); return r.data?.group_id ?? null },
     async loadGroup(groupId) {
@@ -59,7 +80,7 @@ export function supabaseStore(url: string, key: string): Store {
       return {
         group: toGroup(must(g)), members, meId: mine.id,
         places: (must(p) as any[]).map((r): Place => ({ id: r.id, name: r.name, address: r.address ?? undefined, lat: r.lat, lng: r.lng, kind: r.kind })),
-        trips: (must(t) as any[]).map(toTrip),
+        trips: sanitizeTrips((must(t) as any[]).map(toTrip)),
         settlements: (must(s) as any[]).map((r): Settlement => ({ id: r.id, groupId: r.group_id, from: r.from_member, to: r.to_member, cents: r.cents, createdAt: r.created_at, createdBy: r.created_by })),
       } satisfies GroupData
     },
@@ -69,6 +90,8 @@ export function supabaseStore(url: string, key: string): Store {
       const ch = sb.channel(`group-${groupId}`)
       for (const table of ['trips', 'members', 'settlements', 'places']) ch.on('postgres_changes', { event: '*', schema: 'public', table, filter: `group_id=eq.${groupId}` }, fire)
       ch.on('postgres_changes', { event: '*', schema: 'public', table: 'groups', filter: `id=eq.${groupId}` }, fire)
+      // le cancellazioni non si possono filtrare per gruppo: basta ricaricare quando avvengono
+      for (const table of ['settlements', 'places']) ch.on('postgres_changes', { event: 'DELETE', schema: 'public', table }, fire)
       ch.subscribe()
       const vis = () => { if (document.visibilityState === 'visible') fire() }
       document.addEventListener('visibilitychange', vis)
@@ -93,6 +116,8 @@ export function supabaseStore(url: string, key: string): Store {
     async savePlace(groupId, p) { must(await sb.from('places').upsert({ id: p.id, group_id: groupId, name: p.name, address: p.address ?? null, lat: p.lat, lng: p.lng, kind: p.kind }).select()) },
     async deletePlace(_g, id) { must(await sb.from('places').delete().eq('id', id).select()) },
     async addMember(groupId, name) { must(await sb.from('members').insert({ group_id: groupId, name, color: Math.floor(Math.random() * 8) }).select()) },
+    async renameMember(_g, id, name) { const r = must(await sb.from('members').update({ name }).eq('id', id).is('user_id', null).select()) as any[]; if (!r.length) throw new Error('Questo membro ha già un account: può cambiare nome solo lui.') },
+    async removeMember(_g, id) { must(await sb.rpc('remove_placeholder', { p_member: id })) },
     async updateMe(groupId, patch) {
       const me = await uidOrThrow()
       const cur = toMember(must(await sb.from('members').select('*').eq('group_id', groupId).eq('user_id', me).single()))

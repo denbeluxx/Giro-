@@ -6,6 +6,8 @@ export const SIM = import.meta.env?.VITE_SIM === '1'
 const OSRM = (import.meta.env?.VITE_OSRM_URL as string) || 'https://router.project-osrm.org'
 const PHOTON = (import.meta.env?.VITE_PHOTON_URL as string) || 'https://photon.komoot.io'
 
+export class RouteError extends Error { constructor(msg: string, public kind: 'noroute') { super(msg) } }
+
 export interface Route { segs: Seg[]; geometry: [number, number][]; state: 'ok' | 'stimato' }
 export interface Found extends Pt { name: string; address?: string }
 type Tolls = Record<string, GroupToll> | undefined
@@ -33,6 +35,18 @@ function simToll(a: Stop | (Pt & { name?: string }), b: Stop | (Pt & { name?: st
   return a4Toll(f.g.id, t.g.id, tolls)
 }
 
+/** Pedaggio probabile per una distanza stimata: mai certo, sempre «da verificare». */
+function estimateToll(a: Pt, b: Pt, tolls: Tolls): Toll {
+  if (haversine(a, b) < 25000) return { status: 'none', cents: 0 }
+  const near = (p: Pt) => A4_GATES.map((g) => ({ g, d: haversine(p, g) })).sort((x, y) => x.d - y.d)[0]
+  const f = near(a), t = near(b)
+  if (f.d < 16000 && t.d < 16000 && f.g.id !== t.g.id) {
+    const guess = a4Toll(f.g.id, t.g.id, tolls)
+    return { ...guess, status: 'verify', note: 'Distanza stimata: controlla caselli e importo' }
+  }
+  return { status: 'verify', cents: null, note: 'Distanza stimata: controlla se c\'è un pedaggio' }
+}
+
 /** Stima a partire dalla distanza in linea d'aria. Mai presentata come percorso reale. */
 export function estimateRoute(stops: (Pt & { name?: string })[], tolls?: Tolls, withTolls = SIM): Route {
   const segs: Seg[] = []
@@ -40,7 +54,7 @@ export function estimateRoute(stops: (Pt & { name?: string })[], tolls?: Tolls, 
   for (let i = 0; i < stops.length - 1; i++) {
     const a = stops[i], b = stops[i + 1]
     const meters = Math.round(haversine(a, b) * 1.32)
-    segs.push({ meters, seconds: Math.round(meters / (meters > 15000 ? 22 : 9.5)), toll: withTolls ? simToll(a, b, tolls) : { status: 'none', cents: 0 } })
+    segs.push({ meters, seconds: Math.round(meters / (meters > 15000 ? 22 : 9.5)), toll: withTolls ? simToll(a, b, tolls) : estimateToll(a, b, tolls) })
     const n = 14, dx = b.lng - a.lng, dy = b.lat - a.lat, bend = (i % 2 ? -1 : 1) * 0.09
     for (let k = 0; k <= n; k++) {
       const t = k / n, off = Math.sin(t * Math.PI) * bend
@@ -58,6 +72,7 @@ export async function routeStops(stops: Stop[], tolls: Tolls, signal?: AbortSign
   if (SIM) { await new Promise((r) => setTimeout(r, 450)); return [{ ...estimateRoute(stops, tolls), state: 'ok' }] }
   const alt = stops.length === 2 ? '&alternatives=true' : ''
   const j = await getJson(`${OSRM}/route/v1/driving/${coords(stops)}?overview=full&geometries=geojson&steps=true${alt}`, signal)
+  if (j.code === 'NoRoute' || j.code === 'NoSegment') throw new RouteError('Non esiste un percorso in auto tra queste tappe. Controlla che siano su una strada.', 'noroute')
   if (j.code !== 'Ok' || !j.routes?.length) throw new Error('Nessun percorso trovato tra queste tappe')
   return j.routes.map((r: any): Route => ({
     state: 'ok',
@@ -99,16 +114,26 @@ const SIM_PLACES: Found[] = [
 export async function searchPlaces(q: string, near?: Pt, signal?: AbortSignal): Promise<Found[]> {
   if (SIM) {
     await new Promise((r) => setTimeout(r, 250))
-    const s = q.toLowerCase()
-    return SIM_PLACES.filter((p) => `${p.name} ${p.address}`.toLowerCase().includes(s))
+    const norm = (x: string) => x.normalize('NFD').replace(/[\u0300-\u036f]/g, '').toLowerCase()
+    const s = norm(q)
+    return SIM_PLACES.filter((p) => norm(`${p.name} ${p.address}`).includes(s))
   }
   const bias = near ? `&lat=${near.lat}&lon=${near.lng}` : '&lat=45.695&lon=9.67'
   const j = await getJson(`${PHOTON}/api/?q=${encodeURIComponent(q)}&limit=7${bias}`, signal)
-  return (j.features ?? []).map((f: any): Found => {
+  const out: Found[] = []
+  for (const f of j.features ?? []) {
     const p = f.properties ?? {}
+    const c = f.geometry?.coordinates
+    if (!Array.isArray(c) || !isFinite(c[0]) || !isFinite(c[1])) continue
     const street = [p.street, p.housenumber].filter(Boolean).join(' ')
-    const name = p.name || street || p.city || 'Luogo'
-    const address = [p.name ? street : '', p.city || p.town || p.village, p.county].filter(Boolean).join(', ')
-    return { name, address, lat: f.geometry.coordinates[1], lng: f.geometry.coordinates[0] }
-  })
+    const name = p.name || street || p.city || p.town || p.village
+    if (!name) continue
+    const parts: string[] = []
+    for (const x of [p.name ? street : '', p.city || p.town || p.village, p.county]) {
+      if (x && x !== name && !parts.includes(x)) parts.push(x)
+    }
+    const found = { name, address: parts.join(', ') || undefined, lat: c[1], lng: c[0] }
+    if (!out.some((o) => o.name === found.name && haversine(o, found) < 50)) out.push(found)
+  }
+  return out
 }

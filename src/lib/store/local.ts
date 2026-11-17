@@ -2,6 +2,7 @@ import { buildStops, newLeg, reverseStops } from '../plan'
 import { estimateRoute } from '../routing'
 import { pairKey } from '../tolls'
 import { uid, type Group, type GroupData, type ID, type Leg, type Member, type Place, type Trip } from '../types'
+import { sanitizeTrips } from '../validate'
 import { ConflictError, type Store } from './types'
 
 const KEY = 'giro-demo-v2'
@@ -68,7 +69,11 @@ function seed(): DB {
 }
 
 const wait = (ms = 220) => new Promise((r) => setTimeout(r, ms))
-const meOf = (g: G): ID => demoIdentity(g.group.id) ?? g.members.find((m) => m.userId === 'demo-user')?.id ?? g.members[0].id
+const meOf = (g: G): ID => {
+  const id = demoIdentity(g.group.id)
+  if (id && g.members.some((m) => m.id === id && !m.leftAt)) return id
+  return g.members.find((m) => m.userId === 'demo-user' && !m.leftAt)?.id ?? g.members.find((m) => !m.leftAt)!.id
+}
 
 export const localStore: Store = {
   mode: 'demo',
@@ -85,7 +90,7 @@ export const localStore: Store = {
   async previewInvite(code) {
     const g = Object.values(read().groups).find((x) => x.group.inviteCode === code)
     if (!g) throw new Error('Invito non valido o scaduto')
-    return { groupId: g.group.id, name: g.group.name, unclaimed: g.members.filter((m) => !m.userId && !m.leftAt).map((m) => ({ id: m.id, name: m.name })), alreadyMember: g.members.some((m) => m.userId === 'demo-user' && !m.leftAt) }
+    return { groupId: g.group.id, name: g.group.name, unclaimed: g.members.filter((m) => !m.userId && !m.leftAt).map((m) => ({ id: m.id, name: m.name })), alreadyMember: g.members.some((m) => m.userId === 'demo-user' && !m.leftAt), rejoinName: g.members.find((m) => m.userId === 'demo-user' && m.leftAt)?.name ?? null }
   },
   async joinGroup(code, myName, claimId) {
     const db = read()
@@ -93,10 +98,11 @@ export const localStore: Store = {
     if (!g) throw new Error('Invito non valido o scaduto')
     const mine = g.members.find((m) => m.userId === 'demo-user')
     if (mine) mine.leftAt = null
-    else if (claimId) { const m = g.members.find((x) => x.id === claimId && !x.userId); if (m) m.userId = 'demo-user' }
+    else if (claimId) { const m = g.members.find((x) => x.id === claimId && !x.userId); if (!m) throw new Error('Questo nome è appena stato scelto da un altro account. Scegli di nuovo.'); m.userId = 'demo-user' }
     else g.members.push({ id: uid(), groupId: g.group.id, userId: 'demo-user', name: myName, color: g.members.length % 8, home: null, homeShared: false, joinedAt: new Date().toISOString(), leftAt: null })
     write(db); return g.group.id
   },
+  async regenerateInvite(groupId) { const db = read(); const g = db.groups[groupId]; g.group.inviteCode = uid().replace(/-/g, '').slice(0, 18); write(db); return g.group.inviteCode },
   async leaveGroup(groupId) { const db = read(); const g = db.groups[groupId]; const m = g.members.find((x) => x.id === meOf(g)); if (m) m.leftAt = new Date().toISOString(); write(db) },
 
   async findTripGroup(tripId) { return Object.values(read().groups).find((g) => g.trips.some((t) => t.id === tripId))?.group.id ?? null },
@@ -104,7 +110,8 @@ export const localStore: Store = {
     await wait(120)
     const g = read().groups[groupId]
     if (!g) throw new Error('Gruppo non trovato')
-    return { ...structuredClone(g), meId: meOf(g) }
+    const c = structuredClone(g)
+    return { ...c, trips: sanitizeTrips(c.trips), meId: meOf(g) }
   },
   subscribe(_id, cb) { listeners.add(cb); return () => listeners.delete(cb) },
 
@@ -121,11 +128,17 @@ export const localStore: Store = {
     const t = { ...trip, version: expectedVersion + 1 }
     g.trips[i] = t; write(db); return t
   },
-  async addSettlement(s) { await wait(); const db = read(), g = db.groups[s.groupId]; if (!g.settlements.some((x) => x.id === s.id)) g.settlements.push(s); write(db) },
+  async addSettlement(s) {
+    await wait(); const db = read(), g = db.groups[s.groupId]
+    if (s.from === s.to || !g.members.some((m) => m.id === s.from) || !g.members.some((m) => m.id === s.to)) throw new Error('Il rimborso deve essere tra due membri diversi del gruppo')
+    if (!g.settlements.some((x) => x.id === s.id)) g.settlements.push(s); write(db)
+  },
   async deleteSettlement(groupId, id) { const db = read(); const g = db.groups[groupId]; g.settlements = g.settlements.filter((s) => s.id !== id); write(db) },
   async savePlace(groupId, p) { const db = read(); const g = db.groups[groupId]; const i = g.places.findIndex((x) => x.id === p.id); if (i >= 0) g.places[i] = p; else g.places.push(p); write(db) },
   async deletePlace(groupId, id) { const db = read(); const g = db.groups[groupId]; g.places = g.places.filter((p) => p.id !== id); write(db) },
   async addMember(groupId, name) { const db = read(); const g = db.groups[groupId]; g.members.push({ id: uid(), groupId, userId: null, name, color: g.members.length % 8, home: null, homeShared: false, joinedAt: new Date().toISOString(), leftAt: null }); write(db) },
+  async renameMember(groupId, id, name) { const db = read(); const m = db.groups[groupId].members.find((x) => x.id === id && !x.userId); if (!m) throw new Error('Questo membro ha già un account: può cambiare nome solo lui.'); m.name = name; write(db) },
+  async removeMember(groupId, id) { const db = read(); const m = db.groups[groupId].members.find((x) => x.id === id && !x.userId); if (!m) throw new Error('Si possono togliere solo i membri senza account'); m.leftAt = new Date().toISOString(); write(db) },
   async updateMe(groupId, patch) { const db = read(); const g = db.groups[groupId]; const m = g.members.find((x) => x.id === meOf(g))!; Object.assign(m, patch); write(db) },
   async updateGroup(groupId, patch) { const db = read(); const g = db.groups[groupId]; Object.assign(g.group, patch); write(db); return g.group },
 }

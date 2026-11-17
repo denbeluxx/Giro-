@@ -9,6 +9,7 @@ export function PlaceSearch({ onPick, placeholder = 'Cerca un luogo o un indiriz
   const [state, setState] = useState<{ s: 'idle' | 'load' | 'ok' | 'err'; items: Found[]; err?: string }>({ s: 'idle', items: [] })
   const [tick, setTick] = useState(0)
   const ctl = useRef<AbortController | null>(null)
+  const input = useRef<HTMLInputElement>(null)
   useEffect(() => {
     ctl.current?.abort()
     if (q.trim().length < 2) { setState({ s: 'idle', items: [] }); return }
@@ -23,8 +24,8 @@ export function PlaceSearch({ onPick, placeholder = 'Cerca un luogo o un indiriz
   return (
     <div>
       <label className="search"><Icon n="search" size={19} /><span className="sr">{placeholder}</span>
-        <input value={q} onChange={(e) => setQ(e.target.value)} placeholder={placeholder} autoFocus={autoFocus} enterKeyHint="search" autoComplete="off" autoCorrect="off" spellCheck={false} />
-        {q && <button type="button" onClick={() => setQ('')} aria-label="Cancella" style={{ minWidth: 32, minHeight: 44, display: 'flex', alignItems: 'center', justifyContent: 'center' }}><Icon n="x" size={17} /></button>}
+        <input ref={input} value={q} onChange={(e) => setQ(e.target.value)} placeholder={placeholder} autoFocus={autoFocus} enterKeyHint="search" autoComplete="off" autoCorrect="off" spellCheck={false} />
+        {q && <button type="button" className="clear" onClick={() => { setQ(''); input.current?.focus() }} aria-label="Cancella la ricerca"><Icon n="x" size={17} /></button>}
       </label>
       <div style={{ marginTop: 12, minHeight: 120 }}>
         {state.s === 'idle' && children}

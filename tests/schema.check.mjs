@@ -13,7 +13,6 @@ await db.exec(`
   alter default privileges in schema public grant all on tables to authenticated;
 `)
 await db.exec(readFileSync(new URL('../supabase/schema.sql', import.meta.url), 'utf8'))
-await db.exec(`grant all on all tables in schema public to authenticated;`)
 
 const U1 = '11111111-1111-1111-1111-111111111111', U2 = '22222222-2222-2222-2222-222222222222', U3 = '33333333-3333-3333-3333-333333333333'
 await db.exec(`insert into auth.users values ('${U1}'),('${U2}'),('${U3}')`)
@@ -42,7 +41,8 @@ await fails(as(U2, `update members set user_id = '${U3}' where user_id = '${U2}'
 ok((await as(U2, `update members set name = 'X' where user_id = '${U1}' returning id`)).length === 0, 'non si modifica il profilo di un altro')
 
 const T = '99999999-9999-4999-8999-999999999999'
-const ins = `insert into trips(id, group_id, status, starts_at, data, created_by) values ($1, $2, 'planned', now(), '{}', $3) on conflict (id) do nothing returning id`
+const DATA = JSON.stringify({ dest: { name: 'X', lat: 45, lng: 9 }, presentIds: [], legs: [{}] })
+const ins = `insert into trips(id, group_id, status, starts_at, data, created_by) values ($1, $2, 'planned', now(), '${DATA}', $3) on conflict (id) do nothing returning id`
 ok((await as(U1, ins, [T, g, ms[0].id])).length === 1, 'viaggio salvato')
 ok((await as(U1, ins, [T, g, ms[0].id])).length === 0, 'secondo invio dello stesso viaggio: nessun doppione')
 ok((await as(U2, `select * from trips`)).length === 1, 'l\'altro membro vede lo stesso viaggio')
@@ -63,4 +63,30 @@ const after = await as(U1, `select * from members order by joined_at`)
 ok(after.length === 2 && after[1].left_at, 'chi lascia resta nello storico')
 await as(U3, `select join_group($1, 'Sara', null)`, [code])
 ok((await as(U3, `select * from members`)).length === 3, 'nuovo membro aggiunto')
+// --- protezioni aggiunte dopo il collaudo ---
+const [m2] = await as(U3, `select id from members where user_id = '${U3}'`)
+await fails(as(U3, `update members set id = gen_random_uuid() where id = $1`, [m2.id]), 'un membro non può cambiare il proprio id (e azzerare il debito)')
+await fails(as(U3, `update members set joined_at = now() - interval '1 year' where id = $1`, [m2.id]), 'data di ingresso non modificabile')
+await fails(as(U1, `update groups set invite_code = 'aaaa' where id = $1`, [g]), 'il codice invito non si imposta a mano')
+const [{ c }] = await as(U1, `select regenerate_invite($1) c`, [g])
+ok(c.length === 18 && c !== code, 'nuovo link di invito generato')
+await fails(as(U1, `insert into trips(id, group_id, status, starts_at, data) values (gen_random_uuid(), $1, 'planned', now(), '{}')`, [g]), 'viaggio con dati malformati rifiutato')
+const T2 = '99999999-9999-4999-8999-999999999990'
+await as(U3, `insert into trips(id, group_id, status, starts_at, data, created_by, updated_by) values ($1, $2, 'planned', now(), '${DATA}', $3, $3)`, [T2, g, ms[0].id])
+const [tr] = await as(U3, `select created_by, updated_by from trips where id = $1`, [T2])
+ok(tr.created_by === m2.id && tr.updated_by === m2.id, '«creato da» e «modificato da» sono sempre il membro collegato')
+const outsider = (await db.query(`insert into groups(name) values ('Altro') returning id`)).rows[0].id
+const om = (await db.query(`insert into members(group_id, name) values ($1, 'Estraneo') returning id`, [outsider])).rows[0].id
+await fails(as(U3, `insert into settlements(id, group_id, from_member, to_member, cents) values (gen_random_uuid(), $1, $2, $3, 100)`, [g, m2.id, om]), 'rimborso verso un membro di un altro gruppo rifiutato')
+await fails(as(U3, `insert into settlements(id, group_id, from_member, to_member, cents) values (gen_random_uuid(), $1, $2, $2, 100)`, [g, m2.id]), 'rimborso a se stessi rifiutato')
+const S = (await as(U3, `insert into settlements(id, group_id, from_member, to_member, cents) values (gen_random_uuid(), $1, $2, $3, 100) returning id`, [g, m2.id, ms[0].id]))[0].id
+ok((await as(U3, `update settlements set cents = 1 where id = $1 returning id`, [S]).catch(() => [])).length === 0, 'un rimborso non si modifica')
+await as(U1, `insert into members(group_id, name) values ($1, 'Paolo')`, [g])
+const [{ p: pv }] = await as(U2, `select invite_preview($1) p`, [c])
+ok(pv.rejoin_name === 'Luca', 'chi rientra viene riconosciuto: ritrova il suo saldo')
+const paolo = pv.unclaimed.find((x) => x.name === 'Paolo').id
+const U4 = '44444444-4444-4444-4444-444444444444', U5 = '55555555-5555-5555-5555-555555555555'
+await db.exec(`insert into auth.users values ('${U4}'),('${U5}')`)
+await as(U4, `select join_group($1, 'Paolo', $2)`, [c, paolo])
+await fails(as(U5, `select join_group($1, 'Paolo', $2)`, [c, paolo]), 'due account sullo stesso nome: il secondo riceve un errore chiaro, nessun doppione')
 console.log(`\n${pass} controlli superati`)
