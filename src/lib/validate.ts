@@ -11,7 +11,7 @@ const TOLL_STATES = ['none', 'ok', 'verify', 'out'] as const
 
 function toll(v: any): Toll {
   const status = TOLL_STATES.includes(v?.status) ? v.status : 'none'
-  return { status, cents: num(v?.cents, 0, 1e6), road: str(v?.road) ?? undefined, from: str(v?.from) ?? undefined, to: str(v?.to) ?? undefined, note: str(v?.note) ?? undefined }
+  return { status, cents: num(v?.cents, 0, 1e6), road: str(v?.road) ?? undefined, from: str(v?.from) ?? undefined, to: str(v?.to) ?? undefined, note: str(v?.note) ?? undefined, estimate: v?.estimate === true || undefined }
 }
 function stop(v: any): Stop | null {
   const lat = num(v?.lat, -90, 90), lng = num(v?.lng, -180, 180)

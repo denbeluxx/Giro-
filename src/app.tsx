@@ -61,6 +61,7 @@ export function App() {
   const [invite, setInvite] = useState<string | null>(params.get('invito'))
   const [deepTrip, setDeepTrip] = useState<string | null>(params.get('t'))
   const [err, setErr] = useState<string | null>(null)
+  const [missing, setMissing] = useState(false)
 
   useEffect(() => { setTheme(getTheme()); store.session().then(setSession).catch(() => setSession(null)); return store.onAuth(setSession) }, [])
 
@@ -70,7 +71,7 @@ export function App() {
       const gs = await store.listGroups()
       setGroups(gs)
       let pick: ID | null = null
-      if (deepTrip) { pick = await store.findTripGroup(deepTrip); if (!pick) setDeepTrip(null) }
+      if (deepTrip) { pick = await store.findTripGroup(deepTrip); if (!pick) { setDeepTrip(null); setMissing(true); clearParams() } }
       if (!pick) { let last: string | null = null; try { last = localStorage.getItem('giro-group') } catch { /* */ } pick = gs.find((g) => g.id === last)?.id ?? gs[0]?.id ?? null }
       setGroupId(pick)
     } catch (e: any) { setErr(e?.message ?? 'Connessione non riuscita') }
@@ -86,7 +87,7 @@ export function App() {
   else if (err) body = <div className="screen"><div className="scroll" style={{ paddingTop: 120 }}><Empty icon="alert" title="Connessione non riuscita" text="Non riesco a caricare i tuoi gruppi. Controlla la rete e riprova."><Btn onClick={loadGroups}>Riprova</Btn></Empty></div></div>
   else if (!groups) body = <Splash />
   else if (!groupId) body = <Groups groups={groups} onOpen={switchGroup} onCreated={async (id) => { await loadGroups(); switchGroup(id) }} />
-  else body = <GroupProvider key={groupId} groupId={groupId} groups={groups} switchGroup={switchGroup} deepTrip={deepTrip} clearDeep={() => { setDeepTrip(null); clearParams() }} />
+  else body = <GroupProvider key={groupId} groupId={groupId} groups={groups} switchGroup={switchGroup} deepTrip={deepTrip} missing={missing} clearDeep={() => { setDeepTrip(null); setMissing(false); clearParams() }} />
   return <ToastHost><div className="app"><Guard>{body}</Guard></div></ToastHost>
 }
 
@@ -106,7 +107,7 @@ function Splash() {
   return <div className="screen"><div className="scroll" style={{ paddingTop: 'calc(var(--sat) + 70px)' }} aria-busy="true"><Skel w={180} h={34} /><div style={{ height: 22 }} /><Skel h={150} r={22} /><div style={{ height: 26 }} /><Skel h={240} r={14} /></div></div>
 }
 
-function GroupProvider({ groupId, groups, switchGroup, deepTrip, clearDeep }: { groupId: ID; groups: GroupSummary[]; switchGroup: (id: ID | null) => void; deepTrip: string | null; clearDeep: () => void }) {
+function GroupProvider({ groupId, groups, switchGroup, deepTrip, missing, clearDeep }: { groupId: ID; groups: GroupSummary[]; switchGroup: (id: ID | null) => void; deepTrip: string | null; missing?: boolean; clearDeep: () => void }) {
   const [data, setData] = useState<GroupData | null>(null)
   const [err, setErr] = useState<string | null>(null)
   const [stack, setStack] = useState<Route[]>([{ s: 'home' }])
@@ -118,6 +119,7 @@ function GroupProvider({ groupId, groups, switchGroup, deepTrip, clearDeep }: { 
     catch (e: any) { if (n === seq.current) setErr(e?.message ?? 'Errore') }
   }, [groupId])
   useEffect(() => { reload(); return store.subscribe(groupId, reload) }, [groupId, reload])
+  useEffect(() => { if (data && missing) { toast('Il link apre un\'uscita che non esiste o non è di questo gruppo.'); clearDeep() } }, [data, missing]) // eslint-disable-line react-hooks/exhaustive-deps
   useEffect(() => { if (data && deepTrip) { if (data.trips.some((t) => t.id === deepTrip)) { forward(); setStack([{ s: 'home' }, { s: 'trip', id: deepTrip }]) } else toast('Questa uscita non è più disponibile.'); clearDeep() } }, [data, deepTrip]) // eslint-disable-line react-hooks/exhaustive-deps
 
   // ---- Navigazione legata alla cronologia: il tasto o il gesto Indietro del telefono torna indietro di un livello ----
@@ -127,7 +129,10 @@ function GroupProvider({ groupId, groups, switchGroup, deepTrip, clearDeep }: { 
   const handlers = useRef<(() => boolean)[]>([])
   const popStack = useCallback(() => transition('pop', () => setStack((s) => (s.length > 1 ? s.slice(0, -1) : s))), [])
   useEffect(() => {
-    try { history.replaceState({ d: 0 }, '') } catch { /* */ }
+    // dopo una ricarica a metà flusso la cronologia ha ancora i livelli di prima: torniamo alla base
+    const d0 = typeof history.state?.d === 'number' ? history.state.d : 0
+    if (d0 > 0) { pending.current = 'collapse'; level.current = d0; history.go(-d0) }
+    else try { history.replaceState({ d: 0 }, '') } catch { /* */ }
     const onPop = (e: PopStateEvent) => {
       const d = typeof e.state?.d === 'number' ? e.state.d : 0
       if (goingHome.current) { goingHome.current = false; level.current = d; transition('pop', () => setStack([{ s: 'home' }])); return }
@@ -166,7 +171,7 @@ function GroupProvider({ groupId, groups, switchGroup, deepTrip, clearDeep }: { 
       setData((d) => d && { ...d, trips: d.trips.some((x) => x.id === saved.id) ? d.trips.map((x) => (x.id === saved.id ? saved : x)) : [saved, ...d.trips] })
       return saved
     } catch (e) {
-      if (e instanceof ConflictError) { await reload(); toast('Viaggio appena aggiornato da un altro dispositivo: ho ricaricato i dati.'); return null }
+      if (e instanceof ConflictError) { await reload(); toast('Aggiornato da un altro dispositivo: dati ricaricati'); return null }
       throw e
     }
   }, [reload, toast])

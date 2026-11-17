@@ -32,7 +32,8 @@ def new_ctx(b, **kw):
 def leave_flow(pg):
     pg.go_back(); pg.wait_for_timeout(400); pg.go_back(); pg.wait_for_timeout(400)
     pg.click('.nav .nav-btn'); pg.wait_for_timeout(400)
-    if pg.locator('.sheet button:has-text("Elimina la bozza")').count(): tap(pg, '.sheet button:has-text("Elimina la bozza")', 700)
+    # uscendo la bozza resta in home: la eliminiamo per ripartire puliti
+    if pg.locator('[aria-label="Elimina la bozza"]').count(): tap(pg, '[aria-label="Elimina la bozza"]', 500)
 
 def plan_to(pg, place, driver=None, search=None, mode='Organizza uscita', only=None):
     tap(pg, f'text={mode}', 600)

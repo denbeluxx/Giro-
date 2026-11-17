@@ -71,7 +71,8 @@ export function Plan({ mode, edit, redo, at, resume }: { mode: 'plan' | 'record'
 
   const entry: Step = draft0 ? draft0.step : at ?? (edit ? (edit.legs.some((l) => l.stops.length < 2) ? 1 : 2) : 0)
   const [step, setStep] = useState<Step>(entry)
-  const stepStack = useRef<Step[]>([entry])
+  // riprendendo una bozza si può sempre tornare ai passi precedenti
+  const stepStack = useRef<Step[]>(draft0 ? ([0, 1, 2] as Step[]).slice(0, entry + 1) : [entry])
   const [present, setPresent] = useState<ID[]>(draft0?.present ?? (edit ? edit.presentIds : src ? src.presentIds.filter((p) => activeIds.includes(p)) : activeIds))
   const [unavailable, setUnavailable] = useState<ID[]>(draft0?.unavailable ?? edit?.unavailableIds ?? [])
   const [dest, setDest] = useState<Named | null>(draft0?.dest ?? (src ? src.dest : null))
@@ -80,7 +81,12 @@ export function Plan({ mode, edit, redo, at, resume }: { mode: 'plan' | 'record'
   const [undecided, setUndecided] = useState(draft0?.undecided ?? (!!edit && !edit.legs[0]?.driverId))
   const [hasReturn, setHasReturn] = useState(draft0?.hasReturn ?? (src ? src.legs.length > 1 : true))
   const [legs, setLegs] = useState<Leg[]>(draft0?.legs ?? edit?.legs ?? [])
-  const [start, setStart] = useState<Named | null>(draft0?.start ?? null)
+  const [start, setStart] = useState<Named | null>(() => {
+    if (draft0) return draft0.start
+    const go = src?.legs.find((l) => l.kind === 'andata')
+    const s0 = go?.stops[0]
+    return s0 && go!.stops.length >= 2 && !s0.homeOf ? { name: s0.name, lat: s0.lat, lng: s0.lng } : null
+  })
   const [tab, setTab] = useState<Leg['kind']>('andata')
   const [rt, setRt] = useState<Record<string, { s: 'load' } | { s: 'err'; msg: string } | undefined>>({})
   const [alts, setAlts] = useState<Record<string, Route[]>>({})
@@ -92,31 +98,57 @@ export function Plan({ mode, edit, redo, at, resume }: { mode: 'plan' | 'record'
   const [tick, setTick] = useState(0)
   const [busy, run] = useBusy()
   const tripId = useRef(draft0?.tripId ?? edit?.id ?? uid())
-  const sigOf = (p = present, d = driver, ds = dest, r = hasReturn, st = start) => JSON.stringify([[...p].sort(), d, ds && stopKey(ds), r, st && stopKey(st)])
-  const builtSig = useRef(draft0 || (edit && legs.length) ? sigOf() : '')
+  const sigOf = (p = present, d = driver, ds = dest, r = hasReturn, st = start, u = unavailable) => JSON.stringify([[...p].sort(), d, ds && stopKey(ds), r, st && stopKey(st), [...u].sort()])
+  const builtSig = useRef(legs.length && (draft0 || edit) ? sigOf() : '')
+  const leaving = useRef(false)
   const inflight = useRef<Record<string, string>>({})
   const failed = useRef<Record<string, string>>({})
   const removedReturn = useRef<Leg | null>(null)
-  const initial = useRef(JSON.stringify([present, unavailable, dest, when, legs]))
+  const snapshot = () => JSON.stringify([present, unavailable, dest, when, legs, driver, undecided, hasReturn])
+  const initial = useRef(snapshot())
   const saved = useRef(false)
-  const dirty = !saved.current && JSON.stringify([present, unavailable, dest, when, legs]) !== initial.current
+  const dirty = !saved.current && snapshot() !== initial.current
 
   // ---- Tasto Indietro del telefono: chiude un foglio, torna al passo precedente, chiede prima di perdere i dati ----
-  const live$ = useRef({ step, sheet, dirty })
-  live$.current = { step, sheet, dirty }
+  const live$ = useRef({ step, sheet, dirty, done: false as boolean })
+  live$.current = { step, sheet, dirty, done: !!done }
+  useEffect(() => {
+    // una bozza ripresa a metà: una voce di cronologia per ogni passo precedente
+    if (draft0) for (let i = 1; i < stepStack.current.length; i++) forward()
+  }, []) // eslint-disable-line react-hooks/exhaustive-deps
   useEffect(() => onBack(() => {
-    const { sheet: sh, dirty: dy } = live$.current
+    const { sheet: sh, dirty: dy, done: dn } = live$.current
+    if (leaving.current) return false
+    if (dn) { leaving.current = true; forward(); home(); return true } // viaggio già registrato: si torna in home
+    if (sh?.k === 'exit') { forward(); exit(); return true } // secondo Indietro sulla domanda: si esce
     if (sh) { setSheet(null); forward(); return true }
     if (stepStack.current.length > 1) { stepStack.current.pop(); const n = stepStack.current[stepStack.current.length - 1]; transition('pop', () => setStep(n)); return true }
-    if (dy) { setSheet({ k: 'exit' }); forward(); return true }
+    if (dy && edit) { setSheet({ k: 'exit' }); forward(); return true }
+    if (dy && !edit) toast('Bozza salvata: la ritrovi in home')
     return false
-  }), [onBack, forward])
+  }), [onBack, forward]) // eslint-disable-line react-hooks/exhaustive-deps
   const goTo = (n: Step) => {
-    if (n === 2 && builtSig.current !== sigOf()) rebuild()
+    if (n === 2 && (builtSig.current !== sigOf() || !legs.length)) rebuild()
+    const at = stepStack.current.indexOf(n)
+    if (at >= 0) {
+      // il passo è già nella cronologia: ci si torna invece di aggiungerne un altro
+      const k = stepStack.current.length - 1 - at
+      stepStack.current.length = at + 1
+      collapse(k)
+      transition('pop', () => setStep(n))
+      return
+    }
     stepStack.current.push(n); forward()
     transition('push', () => { setStep(n); if (n === 2) setTab('andata') })
   }
-  const back = () => (stepStack.current.length > 1 || !dirty ? pop() : setSheet({ k: 'exit' }))
+  const back = () => {
+    if (leaving.current) return
+    if (stepStack.current.length > 1) return pop()
+    if (dirty && edit) return setSheet({ k: 'exit' })
+    if (dirty) toast('Bozza salvata: la ritrovi in home')
+    leaving.current = true
+    pop()
+  }
 
   // ---- Salvataggio automatico della bozza (solo uscite nuove) ----
   useEffect(() => {
@@ -144,7 +176,7 @@ export function Plan({ mode, edit, redo, at, resume }: { mode: 'plan' | 'record'
     const seen = new Map<string, { p: Named; n: number; last: string }>()
     for (const t of data.trips) {
       if (t.status === 'cancelled' || t.startsAt > now) continue
-      const k = stopKey(t.dest), e = seen.get(k)
+      const k = [...seen.keys()].find((x) => haversine(seen.get(x)!.p, t.dest) < 80) ?? stopKey(t.dest), e = seen.get(k)
       if (e) { e.n++; if (t.startsAt > e.last) { e.last = t.startsAt; e.p = t.dest } } else seen.set(k, { p: t.dest, n: 1, last: t.startsAt })
     }
     const all = [...seen.values()]
@@ -157,7 +189,8 @@ export function Plan({ mode, edit, redo, at, resume }: { mode: 'plan' | 'record'
 
   // ---- Suggerimento e confronto del giro ----
   const recording = mode === 'record' && edit?.status !== 'planned'
-  const suggestion = useMemo(() => (recording ? null : suggestDriver(active, present, unavailable, bal, fmtKmSigned)), [active, present, unavailable, bal, recording])
+  const balShown = useMemo(() => ({ ...bal, km: displayRound(bal.km) }), [bal])
+  const suggestion = useMemo(() => (recording ? null : suggestDriver(active, present, unavailable, balShown, fmtKmSigned)), [active, present, unavailable, balShown, recording])
   const noBase = (id: ID) => !usableHome(byId(id)) && !start
   useEffect(() => {
     if (step !== 1 || !dest) return
@@ -186,8 +219,9 @@ export function Plan({ mode, edit, redo, at, resume }: { mode: 'plan' | 'record'
   function buildLegs(opts: { dest: Named; present: ID[]; driver: ID | null; start: Named | null; hasReturn: boolean; prev: Leg[] }): Leg[] {
     const { dest: ds, present: pr, driver: dv, start: st, prev } = opts
     const prevGo = prev.find((l) => l.kind === 'andata'), prevBack = prev.find((l) => l.kind === 'ritorno')
-    const same = !prev.length && redo && dv === redo.legs[0]?.driverId && [...pr].sort().join() === [...redo.presentIds].sort().join()
-    const goExtras = prevGo ? extraStops(prevGo.stops) : []
+    const homesOk = (l?: Leg) => !l || l.stops.every((s) => !s.homeOf || !!usableHome(byId(s.homeOf)))
+    const same = !prev.length && redo && dv === redo.legs[0]?.driverId && [...pr].sort().join() === [...redo.presentIds].sort().join() && homesOk(redo.legs[0]) && homesOk(redo.legs[1])
+    const goExtras = extraStops((prevGo ?? redo?.legs[0])?.stops ?? [])
     const goStops = !dv ? [] : same ? redo!.legs[0].stops.map((s) => ({ ...s, id: uid() })) : withExtras('andata', buildStops('andata', data.members, pr, dv, ds, st), goExtras)
     const go: Leg = { ...newLeg('andata', dv, goStops), designated: prevGo?.designated ?? redo?.legs[0]?.designated ?? false }
     if (!opts.hasReturn) return [go]
@@ -197,7 +231,7 @@ export function Plan({ mode, edit, redo, at, resume }: { mode: 'plan' | 'record'
     let backStops: Stop[] = []
     if (backDriver) {
       if (same && redo!.legs[1] && redo!.legs[1].driverId === backDriver) backStops = redo!.legs[1].stops.map((s) => ({ ...s, id: uid() }))
-      else if (backDriver === dv) backStops = reverseStops(goStops)
+      else if (backDriver === dv) backStops = withExtras('ritorno', reverseStops(goStops), prevBack ? extraStops(prevBack.stops).filter((x) => !goExtras.some((g) => stopKey(g) === stopKey(x))) : [])
       else backStops = withExtras('ritorno', buildStops('ritorno', data.members, pr, backDriver, ds), prevBack ? extraStops(prevBack.stops) : [])
     }
     return [go, { ...newLeg('ritorno', backDriver, backStops), designated: srcBack?.designated ?? go.designated, time: prevBack?.time ?? srcBack?.time }]
@@ -209,6 +243,8 @@ export function Plan({ mode, edit, redo, at, resume }: { mode: 'plan' | 'record'
     const hr = over.hasReturn ?? hasReturn
     failed.current = {}
     setAlts({})
+    removedReturn.current = null // un ritorno tolto prima non vale più per il nuovo giro
+    if (legs.some((l) => l.actualMeters != null)) toast('Il giro è cambiato: i km inseriti a mano vanno ricontrollati')
     setLegs(buildLegs({ dest: ds, present, driver, start: st, hasReturn: hr, prev: legs }))
     builtSig.current = sigOf(present, driver, ds, hr, st)
   }
@@ -226,7 +262,7 @@ export function Plan({ mode, edit, redo, at, resume }: { mode: 'plan' | 'record'
         .then((routes) => {
           if (!routes.length) throw new Error('vuoto')
           setAlts((a) => ({ ...a, [key]: routes }))
-          setLegs((ls) => ls.map((l) => (l.kind === key && legSig(l) === sig ? { ...l, segs: routes[0].segs, geometry: routes[0].geometry, routeState: 'ok', actualMeters: null, tollOverride: null, tollGates: null } : l)))
+          setLegs((ls) => ls.map((l) => (l.kind === key && legSig(l) === sig ? { ...l, segs: routes[0].segs, geometry: routes[0].geometry, routeState: 'ok', tollOverride: null, tollGates: null } : l)))
           setRt((r) => ({ ...r, [key]: undefined }))
         })
         .catch((e) => { failed.current[key] = sig; setRt((r) => ({ ...r, [key]: { s: 'err', msg: e instanceof RouteError ? e.message : 'Il servizio dei percorsi non risponde. Tappe e scelte restano salvate.' } })) })
@@ -238,11 +274,19 @@ export function Plan({ mode, edit, redo, at, resume }: { mode: 'plan' | 'record'
   const setLeg = (kind: Leg['kind'], fn: (l: Leg) => Leg) => setLegs((ls) => ls.map((l) => (l.kind === kind ? fn(l) : l)))
   const setStops = (kind: Leg['kind'], stops: Stop[]) => setLeg(kind, (l) => {
     const n = normalize(stops)
-    return n.map(stopKey).join('>') !== legSig(l) ? { ...routeless(l), stops: n } : { ...l, stops: n }
+    if (n.map(stopKey).join('>') === legSig(l)) return { ...l, stops: n }
+    if (l.actualMeters != null) toast('Tappe cambiate: i km inseriti a mano vanno ricontrollati')
+    return { ...routeless(l), stops: n }
+  })
+  const withEstimates = (ls: Leg[]) => ls.map((l) => {
+    if (l.segs || l.stops.length < 2 || l.actualMeters == null) return l
+    const r = estimateRoute(l.stops, tolls, false)
+    return { ...l, segs: r.segs, geometry: r.geometry, routeState: 'stimato' as const }
   })
   const pax = (l: Leg) => present.filter((p) => p !== l.driverId)
   // l'arrivo dell'andata e la partenza del ritorno sono la destinazione: restano fissi
-  const lockedIdx = (l: Leg) => (l.kind === 'andata' ? l.stops.length - 1 : 0)
+  const fixedEnd = (l: Leg, s?: Stop) => !!s && (!s.homeOf || s.homeOf === l.driverId)
+  const isLocked = (l: Leg, i: number) => (l.kind === 'andata' ? i === l.stops.length - 1 || (i === 0 && fixedEnd(l, l.stops[0])) : i === 0 || (i === l.stops.length - 1 && fixedEnd(l, l.stops[i])))
 
   const draft = (): Trip => ({
     id: tripId.current, groupId: data.group.id, status: live?.status ?? 'planned', version: live?.version ?? 1, startsAt: when,
@@ -256,10 +300,15 @@ export function Plan({ mode, edit, redo, at, resume }: { mode: 'plan' | 'record'
   const now = Date.now()
   const futureRecord = recording && new Date(when).getTime() > now + 5 * 60e3
   const driverOk = !!driver && present.includes(driver) && !unavailable.includes(driver)
-  const canSave = !!dest && !routing && !futureRecord && (undecided || driverOk) && (recording ? legs.every((l) => l.driverId && l.stops.length >= 2) && !needKm : true)
+  const legDriversOk = legs.every((l) => !l.driverId || (present.includes(l.driverId) && !unavailable.includes(l.driverId)))
+  const canSave = !!dest && legs.length > 0 && legDriversOk && !routing && !futureRecord && (undecided || driverOk) && (recording ? legs.every((l) => l.driverId && l.stops.length >= 2) && !needKm : true)
 
   const save = () => run(async () => {
+    if (leaving.current) return
     if (driver && !present.includes(driver)) throw new Error('Il conducente scelto non è tra i presenti: sceglilo di nuovo.')
+    if (!legs.length) throw new Error('Il percorso non è pronto: torna indietro e scegli chi guida.')
+    if (edit && !dirty) { leaving.current = true; leave(stepStack.current.length); return } // niente da salvare
+    if (edit && live?.status === 'cancelled') throw new Error('Questa uscita è stata annullata nel frattempo: ripristinala prima di modificarla.')
     const t = draft()
     t.legs = t.legs.map((l) => { if (l.segs || l.stops.length < 2) return l; const r = estimateRoute(l.stops, tolls, false); return { ...l, segs: r.segs, geometry: r.geometry, routeState: 'stimato' as const } })
     if (recording && !edit) { t.status = 'confirmed'; t.confirmedAt = new Date().toISOString() }
@@ -268,17 +317,17 @@ export function Plan({ mode, edit, redo, at, resume }: { mode: 'plan' | 'record'
     if (!out) { setConflict(true); return }
     saved.current = true
     if (!edit) clearDraft(data.group.id)
-    if (edit) { toast('Modifiche salvate'); leave(stepStack.current.length) }
+    if (edit) { leaving.current = true; toast('Modifiche salvate'); leave(stepStack.current.length) }
     else if (recording) setDone(out)
     else { collapse(stepStack.current.length - 1); replace({ s: 'trip', id: out.id, fresh: true }) }
   })
-  const exit = () => { saved.current = true; if (!edit) clearDraft(data.group.id); setSheet(null); leave(stepStack.current.length) }
+  const exit = () => { if (leaving.current) return; leaving.current = true; saved.current = true; if (!edit) clearDraft(data.group.id); setSheet(null); leave(stepStack.current.length) }
 
   // ---- Trascinamento delle tappe ----
   const [dragI, setDragI] = useState<{ from: number; dy: number } | null>(null)
   const dragStart = useRef(0)
-  const lo = leg?.kind === 'ritorno' ? 1 : 0
-  const hi = leg ? (leg.kind === 'andata' ? leg.stops.length - 2 : leg.stops.length - 1) : 0
+  const lo = leg ? (isLocked(leg, 0) ? 1 : 0) : 0
+  const hi = leg ? (isLocked(leg, leg.stops.length - 1) ? leg.stops.length - 2 : leg.stops.length - 1) : 0
   const onDown = (i: number) => (e: React.PointerEvent) => { dragStart.current = e.clientY; setDragI({ from: i, dy: 0 }); (e.currentTarget as Element).setPointerCapture(e.pointerId) }
   const onMove = (e: React.PointerEvent) => { if (dragI) setDragI({ ...dragI, dy: e.clientY - dragStart.current }) }
   const target = dragI && leg ? Math.max(lo, Math.min(hi, dragI.from + Math.round(dragI.dy / ROW))) : 0
@@ -339,6 +388,7 @@ export function Plan({ mode, edit, redo, at, resume }: { mode: 'plan' | 'record'
     if (fast && next === snap) next = Math.max(0, Math.min(snaps.length - 1, snap + (p.dy < 0 ? 1 : -1)))
     panel.current.style.transform = `translateY(${snaps[next]}px)`
     setSnapI(next)
+    setTimeout(() => { dragged.current = false }, 0) // il clic generato dal trascinamento è già passato
   }
   const cycle = () => { if (dragged.current) { dragged.current = false; return } setSnapI((snap + 1) % snaps.length); if (panel.current) panel.current.style.transform = '' }
   const visible = panelH - snaps[snap]
@@ -373,7 +423,7 @@ export function Plan({ mode, edit, redo, at, resume }: { mode: 'plan' | 'record'
     )
     const quickList = <div className="list">{quick.recent.map((p) => quickRow(p, 'clock', 'Recente'))}{quick.frequent.map((p) => quickRow(p, 'repeat', 'Ci andate spesso'))}{quick.saved.map((p) => quickRow(p, p.kind === 'ritrovo' ? 'flag' : 'pin'))}</div>
     const hasQuick = quick.recent.length + quick.frequent.length + quick.saved.length > 0
-    const why = !present.length ? 'Scegli almeno una persona.' : !dest ? 'Scegli dove andate.' : futureRecord ? 'La data è nel futuro.' : ''
+    const why = !present.length ? 'Scegli almeno una persona.' : !dest ? (recording ? 'Scegli dove siete andati.' : 'Scegli dove andate.') : futureRecord ? 'La data è nel futuro.' : ''
     return (
       <div className="screen">{top}
         <div className="scroll has-cta" key="s0">
@@ -423,14 +473,26 @@ export function Plan({ mode, edit, redo, at, resume }: { mode: 'plan' | 'record'
       <div className="screen">{top}
         <div className="scroll has-cta" key="s1">
           <h1 className="title">{recording ? 'Chi ha guidato?' : 'Chi guida?'}</h1>
-          <p className="subtitle">{recording ? 'Il saldo cambia quando registri il viaggio.' : suggestion ? `${suggestion.reason} Decidete voi.` : 'Nessuno dei presenti può guidare: salvate con «Da decidere».'}</p>
+          <p className="subtitle">{recording ? (edit ? 'I saldi cambiano quando salvi le modifiche.' : 'Il saldo cambia quando registri il viaggio.') : suggestion ? `${suggestion.reason} Decidete voi.` : 'Nessuno dei presenti può guidare: salvate con «Da decidere».'}</p>
           {showTourBox && <div className="tour-box">
             {!tour ? <Notice kind="info"><Skel w="80%" h={16} /><div style={{ height: 6 }} /><Skel w="45%" h={13} /></Notice>
               : (compare ?? compareIdle) ? <Notice kind="info"><b className="num">{compare ?? compareIdle}</b><br /><span className="dim">Giro delle case{hasReturn ? ', andata e ritorno' : ''}{!tour.real ? ' (stima)' : ''}.</span></Notice>
               : <p className="caption" style={{ margin: '0 6px' }}>Per ognuno, i km del giro delle case{hasReturn ? ' (andata e ritorno)' : ''}{!tour.real ? ', stimati' : ''}.</p>}
           </div>}
 
-          <div role="radiogroup" aria-label="Conducente" style={{ marginTop: 14 }}>
+          {!recording && presentPeople.length > 1 && <div style={{ marginTop: 14 }}>
+            <p className="label">Chi non può guidare questa volta?</p>
+            <div className="chips">{presentPeople.map((m) => <button key={m.id} className="chip plain" aria-pressed={unavailable.includes(m.id)} onClick={() => { const on = unavailable.includes(m.id); setUnavailable(on ? unavailable.filter((u) => u !== m.id) : [...unavailable, m.id]); if (!on && driver === m.id) setDriver(null) }}>{m.name}</button>)}</div>
+          </div>}
+          <div role="radiogroup" aria-label="Conducente" style={{ marginTop: 14 }} onKeyDown={(e) => {
+            if (!['ArrowDown', 'ArrowUp', 'ArrowRight', 'ArrowLeft'].includes(e.key)) return
+            const items = [...e.currentTarget.querySelectorAll<HTMLButtonElement>('[role=radio]:not([disabled])')]
+            const i = items.indexOf(document.activeElement as HTMLButtonElement)
+            if (i < 0) return
+            e.preventDefault()
+            const next = items[(i + (e.key === 'ArrowDown' || e.key === 'ArrowRight' ? 1 : -1) + items.length) % items.length]
+            next.focus(); next.click()
+          }}>
             {presentPeople.map((m) => {
               const off = unavailable.includes(m.id)
               return (
@@ -438,7 +500,7 @@ export function Plan({ mode, edit, redo, at, resume }: { mode: 'plan' | 'record'
                   <Avatar m={m} size={44} />
                   <span style={{ flex: 1, minWidth: 0 }}>
                     <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}><span style={{ fontWeight: 600 }}>{m.name}</span>{suggestion?.id === m.id && <span className="pill accent">Suggerito</span>}</div>
-                    <div className="s num">{off ? 'Non disponibile' : <>Saldo <span className={tone(bal.km[m.id] ?? 0)}>{fmtKmSigned(bal.km[m.id] ?? 0)}</span>{showTourBox && (noBase(m.id) ? <> · giro: partenza da definire</> : tour?.km[m.id] != null ? <> · giro {fmtKm(tour.km[m.id])}</> : null)}</>}</div>
+                    <div className="s num">{off ? 'Non disponibile' : <>Saldo <span className={tone(balShown.km[m.id] ?? 0)}>{fmtKmSigned(balShown.km[m.id] ?? 0)}</span>{showTourBox && (noBase(m.id) ? <> · giro: partenza da definire</> : tour?.km[m.id] != null ? <> · giro {fmtKm(tour.km[m.id])}</> : null)}</>}</div>
                   </span>
                   <span className="radio"><Icon n="check" size={15} sw={3} /></span>
                 </button>
@@ -451,10 +513,7 @@ export function Plan({ mode, edit, redo, at, resume }: { mode: 'plan' | 'record'
             </button>}
           </div>
 
-          {!recording && presentPeople.length > 1 && <div className="section">
-            <p className="label">Chi non può guidare questa volta?</p>
-            <div className="chips">{presentPeople.map((m) => <button key={m.id} className="chip plain" aria-pressed={unavailable.includes(m.id)} onClick={() => { const on = unavailable.includes(m.id); setUnavailable(on ? unavailable.filter((u) => u !== m.id) : [...unavailable, m.id]); if (!on && driver === m.id) setDriver(null) }}>{m.name}</button>)}</div>
-          </div>}
+
         </div>
         <div className="cta col">{why && <p className="cta-hint">{why}</p>}<Btn disabled={!!why} onClick={() => goTo(2)}>Continua</Btn></div>
         {exitSheet}
@@ -493,7 +552,7 @@ export function Plan({ mode, edit, redo, at, resume }: { mode: 'plan' | 'record'
             <div className="stats num" aria-live="polite">
               {!leg?.stops.length ? <span>Percorso calcolato quando scegliete chi guida</span>
                 : rstate?.s === 'load' || (leg.routeState === 'missing' && rstate?.s !== 'err') ? <><Skel w={84} h={24} /><Skel w={60} h={14} /><Skel w={90} h={14} /></>
-                : leg.routeState === 'missing' ? <span>Percorso non calcolato</span>
+                : leg.routeState === 'missing' ? <span>{leg.actualMeters != null ? <><b>{fmtKm(leg.actualMeters)}</b> inseriti a mano</> : 'Percorso non calcolato'}</span>
                 : <><b>{fmtKm(legMeters(leg))}</b>{leg.routeState === 'ok' && leg.actualMeters == null && <span>{fmtDur(legSeconds(leg))}</span>}<span style={toll && (toll.status === 'out' || toll.status === 'verify') ? { color: 'var(--warn)', fontWeight: 600 } : undefined}>{tollText(toll!)}</span></>}
             </div>
           </div>
@@ -522,7 +581,7 @@ export function Plan({ mode, edit, redo, at, resume }: { mode: 'plan' | 'record'
           {leg && leg.stops.length > 0 && (
             <div onPointerMove={onMove} onPointerUp={onUp} onPointerCancel={onUp}>
               {leg.stops.map((s, i) => {
-                const locked = i === lockedIdx(leg)
+                const locked = isLocked(leg, i)
                 const shift = dragI ? (i === dragI.from ? dragI.dy : dragI.from < target && i > dragI.from && i <= target ? -ROW : dragI.from > target && i < dragI.from && i >= target ? ROW : 0) : 0
                 const who = [i === 0 && leg.driverId ? `Parte ${byId(leg.driverId)?.name}` : '', s.on.length ? `Sale ${s.on.map((x) => byId(x)?.name).join(', ')}` : '', s.off.length && i < leg.stops.length - 1 ? `Scende ${s.off.map((x) => byId(x)?.name).join(', ')}` : ''].filter(Boolean).join(' · ')
                 return (
@@ -542,7 +601,8 @@ export function Plan({ mode, edit, redo, at, resume }: { mode: 'plan' | 'record'
           {leg && leg.driverId && <div style={{ marginTop: 10 }}><Btn small kind="tinted" icon="plus" onClick={() => setSheet({ k: 'add' })}>Aggiungi tappa</Btn></div>}
           {leg && leg.driverId && leg.stops.length < 2 && <div style={{ marginTop: 12 }}><Notice kind="info">{leg.kind === 'andata' ? `Manca la partenza: ${byId(leg.driverId)?.name} non ha una casa condivisa. Aggiungi da dove partite.` : 'Manca l\'arrivo del ritorno: aggiungi dove finisce il giro.'}</Notice></div>}
 
-          {fx && legs.some((l) => l.segs) && (
+          {routing && legs.some((l) => l.segs) && <div className="list" style={{ marginTop: 16, padding: '12px 16px' }}><Skel w="45%" h={13} /><div style={{ height: 8 }} /><Skel w="30%" h={18} /><div style={{ height: 8 }} /><Skel w="60%" h={13} /></div>}
+          {!routing && fx && legs.some((l) => l.segs) && (
             <button className="list" style={{ width: '100%', marginTop: 16 }} onClick={() => setSheet({ k: 'who' })}>
               <span className="row"><span className="grow"><div className="s">{recording ? 'Variazione del tuo saldo' : 'Il tuo saldo, se va così'}</div>
                 <div className="t num"><b className={tone(shownKm[me.id] ?? myKm)}>{fmtKmSigned(shownKm[me.id] ?? myKm)}</b>{myEur !== 0 && <span className={myEur > 0 ? 'pos' : 'neg'}> · {fmtEurSigned(myEur)}</span>}</div>
@@ -555,7 +615,7 @@ export function Plan({ mode, edit, redo, at, resume }: { mode: 'plan' | 'record'
             <div className="list">
               {leg.kind === 'andata' ? whenRow
                 : <label className="row"><span className="grow t">Orario del ritorno</span><input type="time" className="num field-inline" aria-label="Orario del ritorno" value={leg.time ?? ''} onChange={(e) => setLeg('ritorno', (l) => ({ ...l, time: e.target.value || undefined }))} /></label>}
-              {leg.kind === 'andata' && <button className="row" onClick={() => setSheet({ k: 'start' })}><span className="grow t">Partenza</span><span className="v">{start ? start.name : usableHome(byId(driver)) ? 'Casa del conducente' : leg.stops[0]?.name ?? 'Da scegliere'}</span><span className="chev"><Icon n="chev" size={18} /></span></button>}
+              {leg.kind === 'andata' && <button className="row" onClick={() => setSheet({ k: 'start' })}><span className="grow t">Partenza</span><span className="v">{start ? start.name : leg.stops.length < 2 ? 'Da scegliere' : usableHome(byId(driver)) ? 'Casa del conducente' : leg.stops[0].name}</span><span className="chev"><Icon n="chev" size={18} /></span></button>}
               {leg.kind === 'andata' && <button className="row" onClick={() => goTo(1)}><span className="grow t">Conducente</span><span className="v">{byId(driver)?.name ?? 'Da decidere'}</span><span className="chev"><Icon n="chev" size={18} /></span></button>}
               {leg.kind === 'ritorno' && <button className="row" onClick={() => setSheet({ k: 'retDriver' })}><span className="grow t">Guida al ritorno</span><span className="v">{byId(leg.driverId)?.name ?? 'Da decidere'}</span><span className="chev"><Icon n="chev" size={18} /></span></button>}
               <div className="row"><div className="grow"><div className="t">Conducente designato</div><div className="s wrap">Km di questa tratta ×2; ×3 se in tutta l'uscita guida meno di 5 km con questa opzione.</div></div><Switch on={leg.designated} label="Conducente designato" onChange={(v) => setLeg(leg.kind, (l) => ({ ...l, designated: v }))} /></div>
@@ -568,7 +628,8 @@ export function Plan({ mode, edit, redo, at, resume }: { mode: 'plan' | 'record'
               setLegs((ls) => {
                 if (!v) { removedReturn.current = ls.find((l) => l.kind === 'ritorno') ?? null; return ls.filter((l) => l.kind === 'andata') }
                 const kept = removedReturn.current
-                const back = kept ?? { ...newLeg('ritorno', ls[0].driverId, reverseStops(ls[0].stops)), designated: ls[0].designated }
+                const fits = kept && dest && kept.stops[0] && stopKey(kept.stops[0]) === stopKey(dest)
+                const back = fits ? kept! : { ...newLeg('ritorno', ls[0].driverId, reverseStops(ls[0].stops)), designated: ls[0].designated }
                 return [...ls.filter((l) => l.kind === 'andata'), back]
               })
               builtSig.current = sigOf(present, driver, dest, v)
@@ -578,11 +639,12 @@ export function Plan({ mode, edit, redo, at, resume }: { mode: 'plan' | 'record'
       </div>
 
       <div className="cta col" style={{ zIndex: 40 }}>
+        {recording && legs.some((l) => { const t = legToll(l); return (t.status === 'verify' && t.cents == null) || t.status === 'out' }) && <p className="cta-hint warn">Pedaggio senza importo: non sarà conteggiato finché non lo inserisci.</p>}
         {conflict && <p className="cta-hint warn">Qualcun altro ha appena modificato questa uscita. Salvando sostituisci le sue modifiche.</p>}
         <Btn busy={busy} disabled={!canSave} onClick={save}>{edit ? 'Salva modifiche' : recording ? 'Registra viaggio' : 'Salva uscita'}</Btn>
       </div>
 
-      {sheet?.k === 'dest' && <Sheet title="Destinazione" onClose={() => setSheet(null)}><PlaceSearch autoFocus onPick={changeDest}><div className="list">{[...quick.recent, ...quick.saved].map((p) => <button className="row" key={stopKey(p)} onClick={() => changeDest(p)}><span className="avatar ic-tile"><Icon n="pin" size={19} /></span><span className="grow"><div className="t">{p.name}</div>{p.address && <div className="s">{p.address}</div>}</span></button>)}</div></PlaceSearch><p className="foot">Il giro viene ricalcolato; le tappe aggiunte a mano restano.</p></Sheet>}
+      {sheet?.k === 'dest' && <Sheet title="Destinazione" onClose={() => setSheet(null)}><PlaceSearch autoFocus onPick={changeDest}><div className="list">{[...quick.recent.map((p) => [p, 'clock', 'Recente'] as const), ...quick.frequent.map((p) => [p, 'repeat', 'Ci andate spesso'] as const), ...quick.saved.map((p) => [p, 'pin', ''] as const)].map(([p, ic, sub]) => <button className="row" key={stopKey(p)} onClick={() => changeDest(p)}><span className="avatar ic-tile"><Icon n={ic} size={19} /></span><span className="grow"><div className="t">{p.name}</div><div className="s">{[sub, p.address].filter(Boolean).join(' · ')}</div></span></button>)}</div></PlaceSearch><p className="foot">Il giro viene ricalcolato; le tappe aggiunte a mano restano.</p></Sheet>}
       {sheet?.k === 'start' && (
         <Sheet title="Da dove partite" onClose={() => setSheet(null)}>
           <PlaceSearch autoFocus near={dest ?? undefined} onPick={(f) => pickStart({ name: f.name, lat: f.lat, lng: f.lng })}>
@@ -595,7 +657,7 @@ export function Plan({ mode, edit, redo, at, resume }: { mode: 'plan' | 'record'
         </Sheet>
       )}
       {sheet?.k === 'stop' && leg && cur && (() => {
-        const i = sheet.i, locked = i === lockedIdx(leg)
+        const i = sheet.i, locked = isLocked(leg, i)
         return (
           <Sheet title={cur.name} onClose={() => setSheet(null)}>
             {pax(leg).length > 0 && <>
@@ -613,7 +675,7 @@ export function Plan({ mode, edit, redo, at, resume }: { mode: 'plan' | 'record'
               })}</div>
               <p className="foot">Si scende solo dopo essere saliti. Chi non sale in nessuna tappa non partecipa a questa tratta.</p>
             </>}
-            {locked ? <p className="foot" style={{ marginTop: 14 }}>È la destinazione: per cambiarla tocca il nome in alto nel pannello.</p> : (
+            {locked ? <p className="foot" style={{ marginTop: 14 }}>{stopKey(cur) === (dest && stopKey(dest)) ? 'È la destinazione: per cambiarla tocca il nome in alto nel pannello.' : leg.kind === 'andata' ? 'È la partenza: per cambiarla usa «Partenza» nelle opzioni.' : 'È l\'arrivo del conducente: resta l\'ultima tappa.'}</p> : (
               <div className="list" style={{ marginTop: 18 }}>
                 <button className="row" disabled={i <= lo} onClick={() => { moveStop(i, -1); setSheet({ k: 'stop', i: i - 1 }) }}><Icon n="up" /><span className="grow t">Sposta prima</span></button>
                 <button className="row" disabled={i >= hi} onClick={() => { moveStop(i, 1); setSheet({ k: 'stop', i: i + 1 }) }}><Icon n="down" /><span className="grow t">Sposta dopo</span></button>
@@ -644,13 +706,13 @@ export function Plan({ mode, edit, redo, at, resume }: { mode: 'plan' | 'record'
                   const stops = m.id === legs[0].driverId ? reverseStops(legs[0].stops) : withExtras('ritorno', buildStops('ritorno', data.members, present, m.id, dest!), extraStops(l.stops))
                   return { ...newLeg('ritorno', m.id, stops), designated: l.designated, time: l.time }
                 }); setSheet(null)
-              }}><Avatar m={m} size={40} /><span style={{ flex: 1 }}><div style={{ fontWeight: 500 }}>{m.name}</div><div className="s num">{off ? 'Non disponibile' : <>Saldo <span className={tone(bal.km[m.id] ?? 0)}>{fmtKmSigned(bal.km[m.id] ?? 0)}</span></>}</div></span><span className="radio"><Icon n="check" size={15} sw={3} /></span></button>
+              }}><Avatar m={m} size={40} /><span style={{ flex: 1 }}><div style={{ fontWeight: 500 }}>{m.name}</div><div className="s num">{off ? 'Non disponibile' : <>Saldo <span className={tone(balShown.km[m.id] ?? 0)}>{fmtKmSigned(balShown.km[m.id] ?? 0)}</span></>}</div></span><span className="radio"><Icon n="check" size={15} sw={3} /></span></button>
             )
           })}</div>
           <p className="foot">Con un conducente diverso il ritorno finisce a casa sua; la soglia dei 5 km vale per ciascuno.</p>
         </Sheet>
       )}
-      {sheet?.k === 'km' && <KmSheet trip={draft()} byId={byId} onClose={() => setSheet(null)} onSave={(l) => { setLegs(l); setSheet(null) }} />}
+      {sheet?.k === 'km' && <KmSheet trip={draft()} byId={byId} onClose={() => setSheet(null)} onSave={(l) => { setLegs(withEstimates(l)); setSheet(null) }} />}
       {sheet?.k === 'toll' && <TollSheet trip={draft()} people={presentPeople} groupTolls={tolls} meId={me.id} onClose={() => setSheet(null)} onSave={(l, remember: Record<string, GroupToll>) => {
         setLegs(l); setSheet(null)
         if (Object.keys(remember).length) store.updateGroup(data.group.id, { settings: { ...data.group.settings, tolls: { ...(tolls ?? {}), ...remember } } }).then(() => { app.reload(); toast('Tariffa ricordata per il gruppo') }).catch(() => toast('Tariffa non salvata: riprova dal riepilogo'))
@@ -660,9 +722,11 @@ export function Plan({ mode, edit, redo, at, resume }: { mode: 'plan' | 'record'
           {edit && <><p className="label">Chi c'era</p><div className="chips" style={{ marginBottom: 18 }}>{chipPeople.map((m) => <button key={m.id} className="chip" aria-pressed={present.includes(m.id)} disabled={legs.some((l) => l.driverId === m.id)} onClick={() => {
             const on = present.includes(m.id), next = on ? present.filter((p) => p !== m.id) : [...present, m.id]
             setPresent(next)
-            setLegs((ls) => ls.map((l) => ({ ...l, stops: normalize(on ? sanitizeStops(l.stops, l.driverId, next) : l.stops.map((s, i) => (i === 0 ? { ...s, on: [...s.on, m.id] } : s))) })))
+            if (dest && driver) { setLegs(buildLegs({ dest, present: next, driver, start, hasReturn, prev: legs })); failed.current = {}; setAlts({}) }
+            else setLegs((ls) => ls.map((l) => ({ ...l, stops: normalize(sanitizeStops(l.stops, l.driverId, next)) })))
             builtSig.current = sigOf(next)
           }}><Avatar m={m} size={34} />{m.name}</button>)}</div></>}
+          {edit && <p className="foot" style={{ marginTop: -10, marginBottom: 14 }}>Il giro delle case viene ricalcolato. Chi guida non si può togliere: cambia prima il conducente.</p>}
           {fx && <div className="list">{presentPeople.map((m) => <div className="row" key={m.id}><Avatar m={m} /><span className="grow t">{m.name}</span><span className="num" style={{ textAlign: 'right' }}><div className={tone(shownKm[m.id] ?? 0)} style={{ fontWeight: 600 }}>{fmtKmSigned(shownKm[m.id] ?? 0)}</div>{(fx.eur.get(m.id) ?? 0) !== 0 && <div className="s">{fmtEurSigned(fx.eur.get(m.id) ?? 0)}</div>}</span></div>)}</div>}
           <p className="foot">{recording ? 'Al conducente i km validi; ogni occupante, conducente compreso, ne paga una quota uguale per i tratti percorsi.' : 'È una previsione: i saldi cambiano solo alla conferma del viaggio.'}</p>
         </Sheet>

@@ -62,6 +62,8 @@ export function legToll(leg: Leg): LegToll {
     const gates = leg.tollGates ?? (base?.from ? { from: base.from, to: base.to! } : null)
     return { ...(base ?? {}), from: gates?.from, to: gates?.to, status: cents > 0 ? 'ok' : 'none', cents, known: cents, manual: true, note: undefined }
   }
+  // caselli scelti a mano senza importo: il pedaggio resta da verificare per quei caselli
+  if (leg.tollGates) return { status: 'verify', cents: null, known: 0, manual: true, road: 'A4', from: leg.tollGates.from, to: leg.tollGates.to, note: 'Importo da inserire per i caselli scelti' }
   let status: TollStatus = 'none'
   let ref: Toll | undefined
   let known = 0
@@ -80,6 +82,7 @@ export function legToll(leg: Leg): LegToll {
 function segTollCents(leg: Leg): number[] {
   const segs = hasSegs(leg) ? leg.segs! : []
   if (!segs.length) return leg.tollOverride != null && leg.actualMeters != null ? [safe(leg.tollOverride, MAX_CENTS)] : []
+  if (leg.tollOverride == null && leg.tollGates) return segs.map(() => 0) // importo ancora da inserire
   if (leg.tollOverride != null) {
     const total = safe(leg.tollOverride, MAX_CENTS)
     const out = segs.map(() => 0)
@@ -87,7 +90,9 @@ function segTollCents(leg: Leg): number[] {
     // l'importo della tratta si divide tra i tratti a pagamento in proporzione alla loro lunghezza
     let idx = segs.map((s, i) => (s.toll.status !== 'none' ? i : -1)).filter((i) => i >= 0)
     if (!idx.length) idx = [segs.reduce((best, s, i) => (s.meters > segs[best].meters ? i : best), 0)]
-    const w = idx.map((i) => Math.max(1, safe(segs[i].meters, MAX_M)))
+    // pesi: gli importi calcolati per ogni tratto, se tutti noti; altrimenti la lunghezza
+    const auto = idx.map((i) => (segs[i].toll.status !== 'out' ? safe(segs[i].toll.cents, MAX_CENTS) : 0))
+    const w = auto.every((c) => c > 0) ? auto : idx.map((i) => Math.max(1, safe(segs[i].meters, MAX_M)))
     const wsum = w.reduce((a, b) => a + b, 0)
     let given = 0
     idx.forEach((i, k) => { const c = k === idx.length - 1 ? total - given : Math.round((total * w[k]) / wsum); out[i] = c; given += c })
@@ -201,6 +206,8 @@ export function balances(members: Member[], trips: Trip[], settlements: Settleme
   for (const m of members) { km[m.id] = 0; eur[m.id] = 0 }
   for (const t of trips) {
     if (t.status !== 'confirmed') continue
+    const ids = [...(t.presentIds ?? []), ...(t.legs ?? []).flatMap((l) => [l.driverId, l.tollPayerId, ...l.stops.flatMap((s) => [...s.on, ...s.off])])].filter((x): x is ID => !!x)
+    if (ids.some((x) => !known.has(x))) { console.warn('Viaggio con persone estranee al gruppo ignorato', t.id); continue }
     const e = tripEffect(t)
     for (const [id, v] of e.km) km[id] = (km[id] ?? 0) + v
     for (const [id, v] of e.eur) eur[id] = (eur[id] ?? 0) + v
@@ -224,18 +231,19 @@ export interface Suggestion { id: ID; reason: string }
 export function suggestDriver(members: Member[], presentIds: ID[], unavailableIds: ID[], bal: Balances, fmtKm: (m: number) => string): Suggestion | null {
   const cands = members.filter((m) => presentIds.includes(m.id) && !unavailableIds.includes(m.id))
   if (!cands.length) return null
-  const tenth = (id: ID) => Math.round((bal.km[id] ?? 0) / 100) // confronto al decimo di km mostrato
+  const tenth = (id: ID) => { const v = bal.km[id] ?? 0; return Math.sign(v) * Math.round(Math.abs(v) / 100) } // confronto al decimo di km mostrato
   const last = (id: ID) => bal.lastDrove[id] ?? ''
   const joined = (a: Member, b: Member) => (a.joinedAt < b.joinedAt ? -1 : a.joinedAt > b.joinedAt ? 1 : a.id < b.id ? -1 : 1)
   const sorted = [...cands].sort((a, b) => tenth(a.id) - tenth(b.id) || (last(a.id) < last(b.id) ? -1 : last(a.id) > last(b.id) ? 1 : 0) || joined(a, b))
   const top = sorted[0], second = sorted[1]
   const first = (m: Member) => m.name.split(' ')[0]
-  if (cands.length === 1) return { id: top.id, reason: presentIds.length === 1 ? `C'è solo ${first(top)}.` : `${first(top)} è l'unico che può guidare.` }
+  if (cands.length === 1) return { id: top.id, reason: presentIds.length === 1 ? `C'è solo ${first(top)}.` : `Può guidare solo ${first(top)}.` }
   if (tenth(second.id) !== tenth(top.id)) return { id: top.id, reason: `${first(top)} ha il saldo più basso tra chi può guidare (${fmtKm(bal.km[top.id] ?? 0)}).` }
   if (last(top.id) !== last(second.id)) {
     return { id: top.id, reason: last(top.id) ? `A parità di saldo, ${first(top)} non guida da più tempo.` : `A parità di saldo, ${first(top)} non ha ancora guidato.` }
   }
-  const why = last(top.id) ? '' : ` e nessuno dei due ha ancora guidato`
+  const why = last(top.id) ? '' : ' e non hanno ancora guidato'
+  if (top.joinedAt === second.joinedAt) return { id: top.id, reason: `${first(top)} e ${first(second)} sono pari${why}: suggerito ${first(top)}.` }
   return { id: top.id, reason: `${first(top)} e ${first(second)} sono pari${why}: ${first(top)} è nel gruppo da più tempo.` }
 }
 

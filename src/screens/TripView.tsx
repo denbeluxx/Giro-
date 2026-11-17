@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from 'react'
+import { useEffect, useMemo, useRef, useState } from 'react'
 import { useApp } from '../app'
 import { displayRound, legToll, tripEffect, type TripEffect } from '../lib/calc'
 import { fmtDate, fmtDateLong, fmtEur, fmtEurSigned, fmtKm, fmtKmSigned, fmtTime } from '../lib/format'
@@ -11,6 +11,12 @@ import { MapView } from '../ui/MapView'
 import { KmSheet, TollSheet } from './editors'
 import { tone } from './Home'
 import { StatusPill } from './Others'
+
+/** Vicino alla soglia dei 5 km con conducente designato mostriamo i metri, così ×3 e ×2 non sembrano contraddirsi. */
+function fmtKmFine(m: number, t: Trip): string {
+  const flagged = t.legs.some((l) => l.designated)
+  return flagged && m > 4900 && m < 5100 && Math.round(m) !== 5000 ? `${(Math.round(m) / 1000).toFixed(3).replace('.', ',')}\u00a0km` : fmtKm(m)
+}
 
 /** Le uscite per cui il foglio di condivisione si è già aperto da solo. */
 const sharedOnce = new Set<ID>()
@@ -29,7 +35,10 @@ export function ShareSheet({ trip, members, onClose }: { trip: Trip; members: Me
 
 export function Done({ trip, fx, meId, onClose }: { trip: Trip; fx: TripEffect; meId: ID; onClose: () => void }) {
   const km = displayRound(Object.fromEntries(fx.km))[meId] ?? 0, eur = fx.eur.get(meId) ?? 0
-  useEffect(() => { const k = (e: KeyboardEvent) => { if (e.key === 'Escape') onClose() }; window.addEventListener('keydown', k); return () => window.removeEventListener('keydown', k) }, [onClose])
+  useEffect(() => {
+    const k = (e: KeyboardEvent) => { if (e.key === 'Escape') onClose(); if (e.key === 'Tab') { e.preventDefault(); (document.querySelector('.done .btn') as HTMLElement | null)?.focus() } }
+    window.addEventListener('keydown', k); return () => window.removeEventListener('keydown', k)
+  }, [onClose])
   return (
     <div className="done glass" role="alertdialog" aria-modal="true" aria-labelledby="done-t">
       <svg width="96" height="96" viewBox="0 0 96 96" fill="none" stroke="var(--pos)" strokeWidth="5" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true"><circle cx="48" cy="48" r="40" transform="rotate(-90 48 48)" /><path d="M31 49.5l11.5 11.5L66 37" /></svg>
@@ -47,7 +56,7 @@ export function Done({ trip, fx, meId, onClose }: { trip: Trip; fx: TripEffect; 
 
 export function TripView({ id, fresh }: { id: ID; fresh?: boolean }) {
   const app = useApp()
-  const { data, byId, me, pop, push, home, saveTrip } = app
+  const { data, byId, me, pop, push, home, saveTrip, onBack, forward } = app
   const stored = data.trips.find((t) => t.id === id)
   const toast = useToast()
   const [sheet, setSheet] = useState<null | 'km' | 'toll' | 'share' | 'cancel' | 'detail'>(() => (fresh && !sharedOnce.has(id) ? (sharedOnce.add(id), 'share') : null))
@@ -57,6 +66,18 @@ export function TripView({ id, fresh }: { id: ID; fresh?: boolean }) {
   const tolls = data.group.settings.tolls
   // per le uscite in programma usiamo le tariffe confermate dal gruppo anche dopo il salvataggio
   const trip = useMemo(() => (stored && stored.status === 'planned' ? { ...stored, legs: refreshTolls(stored.legs, tolls) } : stored), [stored, tolls])
+  // tasto Indietro: chiude prima il foglio aperto; dopo una conferma torna in home
+  const live$ = useRef({ sheet, done: !!done })
+  live$.current = { sheet, done: !!done }
+  useEffect(() => onBack(() => {
+    if (live$.current.done) { forward(); home(); return true }
+    if (live$.current.sheet) { setSheet(null); forward(); return true }
+    return false
+  }), [onBack, forward, home])
+  // annullato da un altro dispositivo mentre si correggeva: si chiude il foglio invece di salvare
+  useEffect(() => {
+    if (stored?.status === 'cancelled' && (sheet === 'km' || sheet === 'toll')) { setSheet(null); toast('Questo viaggio è stato appena annullato da un altro dispositivo.') }
+  }, [stored?.status]) // eslint-disable-line react-hooks/exhaustive-deps
   if (!trip) return <div className="screen"><div className="nav"><button className="nav-btn" onClick={pop}><Icon n="back" />Indietro</button></div><div className="scroll"><Empty icon="alert" title="Uscita non trovata" text="Potrebbe appartenere a un altro gruppo o essere stata rimossa." /></div></div>
 
   const fx = tripEffect(trip)
@@ -88,7 +109,7 @@ export function TripView({ id, fresh }: { id: ID; fresh?: boolean }) {
   const confirm = () => run(async () => {
     const next: Trip = { ...trip, status: 'confirmed', confirmedAt: new Date().toISOString(), updatedBy: me.id, updatedAt: new Date().toISOString() }
     const saved = await saveTrip(next, trip.version)
-    if (saved) setDone(tripEffect(saved))
+    if (saved) { setDone(tripEffect(saved)); toast(`Viaggio a ${trip.dest.name} confermato`) }
   })
   const saveTolls = (legs: Leg[], remember: Record<string, GroupToll>) => run(async () => {
     if (Object.keys(remember).length) await store.updateGroup(data.group.id, { settings: { ...data.group.settings, tolls: { ...(data.group.settings.tolls ?? {}), ...remember } } })
@@ -124,8 +145,8 @@ export function TripView({ id, fresh }: { id: ID; fresh?: boolean }) {
               value={!drivers.some(Boolean) ? 'Da decidere' : sameDriver ? drivers[0]?.name : trip.legs.map((l, i) => `${l.kind === 'andata' ? 'Andata' : 'Ritorno'} ${drivers[i]?.name ?? 'da decidere'}`).join(' · ')} />
             <Row label="Partecipanti, data e destinazione" onClick={() => editAt(0)}
               value={<span style={{ display: 'flex', alignItems: 'center', gap: 10 }}><span className="stack">{present.map((m) => <Avatar key={m.id} m={m} size={28} />)}</span><span className="dim" style={{ fontSize: 15 }}>{present.length} in auto</span></span>} />
-            <Row label="Km effettivi" onClick={unknown ? () => editAt(unknown && missingDriver ? 1 : 2) : () => setSheet('km')} value={<span className="num">{unknown ? '—' : fmtKm(fx.realMeters)}</span>}
-              sub={!unknown && trip.legs.length > 1 ? fx.legs.map((l) => `${l.kind} ${fmtKm(l.realMeters)}`).join(' · ') : unknown ? 'Si calcolano quando scegliete chi guida' : undefined}
+            <Row label={trip.status === 'planned' && !past ? 'Km previsti' : 'Km effettivi'} onClick={unknown ? () => editAt(missingDriver ? 1 : 2) : () => setSheet('km')} value={<span className="num">{unknown ? '—' : fmtKmFine(fx.realMeters, trip)}</span>}
+              sub={!unknown && trip.legs.length > 1 ? fx.legs.map((l) => `${l.kind} ${fmtKm(l.realMeters)}`).join(' · ') : unknown ? (missingDriver ? 'Si calcolano quando scegliete chi guida' : 'Manca la partenza: impostala nel percorso') : undefined}
               pill={!unknown && trip.legs.some((l) => l.routeState === 'stimato' && l.actualMeters == null) ? <span className="pill warn">Stima</span> : undefined} />
             {!unknown && <Row label="Validi per il saldo" onClick={() => setSheet('km')} value={<span className="num">{fmtKm(fx.weightedMeters)}</span>}
               sub={fx.legs.map((l) => `×${l.mult}${fx.legs.length > 1 ? ` ${l.kind}` : ''}`).join(' · ') + (trip.legs.some((l) => l.designated) ? ' · conducente designato' : '')} />}
@@ -161,7 +182,8 @@ export function TripView({ id, fresh }: { id: ID; fresh?: boolean }) {
 
       {trip.status === 'planned' && (
         <div className="cta col">
-          {missingDriver || noStops ? <Btn onClick={() => editAt(1)}>Scegli chi guida</Btn>
+          {missingDriver ? <Btn onClick={() => editAt(1)}>Scegli chi guida</Btn>
+            : noStops ? <Btn onClick={() => editAt(2)}>Imposta la partenza</Btn>
             : !past ? <><p className="cta-hint">Potrete confermare il viaggio dopo la partenza.</p><Btn icon="wa" onClick={() => setSheet('share')}>Condividi il piano</Btn></>
             : missingRoute ? <Btn onClick={() => setSheet('km')}>Inserisci i km</Btn>
             : <>{unpriced && <p className="cta-hint warn">Pedaggio senza importo: non sarà conteggiato finché non lo inserisci.</p>}<Btn busy={busy} icon="check" onClick={confirm}>Conferma viaggio</Btn></>}

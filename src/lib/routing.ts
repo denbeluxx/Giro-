@@ -42,9 +42,9 @@ function estimateToll(a: Pt, b: Pt, tolls: Tolls): Toll {
   const f = near(a), t = near(b)
   if (f.d < 16000 && t.d < 16000 && f.g.id !== t.g.id) {
     const guess = a4Toll(f.g.id, t.g.id, tolls)
-    return { ...guess, status: 'verify', note: 'Distanza stimata: controlla caselli e importo' }
+    return { ...guess, status: 'verify', estimate: true, note: 'Distanza stimata: controlla caselli e importo' }
   }
-  return { status: 'verify', cents: null, note: 'Distanza stimata: controlla se c\'è un pedaggio' }
+  return { status: 'verify', cents: null, estimate: true, note: 'Distanza stimata: controlla se c\'è un pedaggio' }
 }
 
 /** Stima a partire dalla distanza in linea d'aria. Mai presentata come percorso reale. */

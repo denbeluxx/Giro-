@@ -49,7 +49,9 @@ export function Places() {
   const { data, active, reload } = useApp()
   const [add, setAdd] = useState(false)
   const [draft, setDraft] = useState<Place | null>(null)
+  const [confirmDel, setConfirmDel] = useState(false)
   const [busy, run] = useBusy()
+  const toast = useToast()
   const homes = active.filter((m) => m.home && m.homeShared)
   const kinds = { locale: 'Locale', ritrovo: 'Punto di ritrovo', altro: 'Altro' } as const
   return (
@@ -68,16 +70,18 @@ export function Places() {
           <div className="list">{homes.map((m) => <div className="row" key={m.id}><Avatar m={m} /><div className="grow"><div className="t">Casa di {m.name}</div><div className="s">{m.home!.label}</div></div></div>)}</div>
           <p className="foot">Ognuno decide dal proprio profilo se rendere la casa disponibile al gruppo.</p></div>}
       </div>
-      {add && <Sheet title="Nuovo luogo" onClose={() => setAdd(false)}><PlaceSearch autoFocus onPick={(f) => { setAdd(false); setDraft({ id: uid(), name: f.name, address: f.address, lat: f.lat, lng: f.lng, kind: 'locale' }) }} /></Sheet>}
+      {add && <Sheet title="Nuovo luogo" onClose={() => setAdd(false)}><PlaceSearch autoFocus onPick={(f) => { const dup = data.places.find((p) => Math.abs(p.lat - f.lat) < 0.0008 && Math.abs(p.lng - f.lng) < 0.0008); setAdd(false); if (dup) { toast(`«${dup.name}» è già tra i luoghi salvati`); setDraft(dup) } else setDraft({ id: uid(), name: f.name, address: f.address, lat: f.lat, lng: f.lng, kind: 'locale' }) }} /></Sheet>}
       {draft && <Sheet title={data.places.some((p) => p.id === draft.id) ? 'Modifica luogo' : 'Salva luogo'} onClose={() => setDraft(null)}
         footer={<><Btn busy={busy} disabled={!draft.name.trim()} onClick={() => run(async () => { await store.savePlace(data.group.id, draft); await reload(); setDraft(null) })}>Salva</Btn>
-          {data.places.some((p) => p.id === draft.id) && <Btn kind="danger" onClick={() => run(async () => { await store.deletePlace(data.group.id, draft.id); await reload(); setDraft(null) })}>Elimina luogo</Btn>}</>}>
+          {data.places.some((p) => p.id === draft.id) && <Btn kind="danger" onClick={() => setConfirmDel(true)}>Elimina luogo</Btn>}</>}>
         <label className="label" htmlFor="pn">Nome</label>
         <input id="pn" className="field" value={draft.name} onChange={(e) => setDraft({ ...draft, name: e.target.value })} />
         {draft.address && <p className="foot">{draft.address}</p>}
         <div style={{ height: 16 }} />
         <Seg value={draft.kind} onChange={(kind) => setDraft({ ...draft, kind })} options={[{ v: 'locale', l: 'Locale' }, { v: 'ritrovo', l: 'Ritrovo' }, { v: 'altro', l: 'Altro' }]} />
       </Sheet>}
+      {confirmDel && draft && <Sheet title={`Eliminare «${draft.name}»?`} onClose={() => setConfirmDel(false)} footer={<><Btn busy={busy} className="btn-danger" onClick={() => run(async () => { await store.deletePlace(data.group.id, draft.id); await reload(); setConfirmDel(false); setDraft(null); toast('Luogo eliminato') })}>Elimina luogo</Btn><div style={{ height: 8 }} /><Btn kind="gray" onClick={() => setConfirmDel(false)}>Annulla</Btn></>}>
+        <p style={{ margin: '0 4px', lineHeight: 1.4 }}>Non comparirà più tra le scelte rapide. Le uscite già fatte non cambiano.</p></Sheet>}
     </div>
   )
 }
@@ -119,7 +123,7 @@ export function Money() {
             ))}</div>
           )}
           <div style={{ height: 12 }} />
-          <Btn kind="tinted" onClick={() => setPay({ from: me.id, to: null, amount: '' })}>Registra un rimborso</Btn>
+          {people.length > 1 && <Btn kind="tinted" onClick={() => setPay({ from: me.id, to: null, amount: '' })}>Registra un rimborso</Btn>}
         </div>
 
         {data.settlements.length > 0 && <div className="section"><div className="section-h"><h2>Rimborsi registrati</h2></div>
@@ -157,12 +161,18 @@ export function Members() {
   const { data, me, active, bal, reload, groups, switchGroup, signOut } = useApp()
   const toast = useToast()
   const [theme, setT] = useState<Theme>(getTheme())
-  const [sheet, setSheet] = useState<null | 'add' | 'home' | 'leave' | 'name' | 'invite' | 'member'>(null)
+  const [sheet, setSheet] = useState<null | 'add' | 'home' | 'homeOff' | 'leave' | 'name' | 'invite' | 'member' | 'memberOff'>(null)
   const [editing, setEditing] = useState<ID | null>(null)
   const [name, setName] = useState('')
   const [busy, run] = useBusy()
   const link = inviteLink(data.group.inviteCode)
   const left = data.members.filter((m) => m.leftAt)
+  const byIdM = (id: ID) => data.members.find((m) => m.id === id)
+  const balNote = (id: ID) => {
+    const km = displayRound(bal.km)[id] ?? 0, eur = bal.eur[id] ?? 0
+    if (!km && !eur) return 'Il saldo è in pari.'
+    return `Ha ancora un saldo aperto: ${km ? fmtKmSigned(km) : ''}${km && eur ? ' e ' : ''}${eur ? fmtEurSigned(eur) + ' di pedaggi' : ''}.`
+  }
   const dupName = (n: string, except?: ID | null) => active.some((m) => m.id !== except && m.name.trim().toLowerCase() === n.trim().toLowerCase())
   const copy = async () => { try { await navigator.clipboard.writeText(link); toast('Link copiato') } catch { toast('Copia non riuscita: tieni premuto sul link') } }
   return (
@@ -182,8 +192,8 @@ export function Members() {
         <div className="section"><div className="section-h"><h2>Membri</h2><button className="link" onClick={() => { setName(''); setSheet('add') }}>Aggiungi</button></div>
           <div className="list">{active.map((m) => {
             const inner = <><Avatar m={m} /><div className="grow"><div className="t">{m.name}{m.id === me.id && <span className="dim"> · tu</span>}</div>
-              <div className="s">{!m.userId ? 'Non ha ancora l\'app · tocca per modificare' : m.home && m.homeShared ? m.home.label : 'Casa non condivisa'}</div></div></>
-            return !m.userId ? <button className="row" key={m.id} onClick={() => { setName(m.name); setEditing(m.id); setSheet('member') }}>{inner}<span className="chev"><Icon n="chev" size={18} /></span></button> : <div className="row" key={m.id}>{inner}</div>
+              <div className="s">{!m.userId ? 'Senza app · tocca per modificare' : m.home && m.homeShared ? m.home.label : 'Casa non condivisa'}</div></div></>
+            return !m.userId && m.id !== me.id ? <button className="row" key={m.id} onClick={() => { setName(m.name); setEditing(m.id); setSheet('member') }}>{inner}<span className="chev"><Icon n="chev" size={18} /></span></button> : <div className="row" key={m.id}>{inner}</div>
           })}</div>
           {left.length > 0 && <><p className="foot" style={{ marginTop: 14 }}>Hanno lasciato il gruppo (restano nello storico): {left.map((m) => `${m.name} (${fmtKmSigned(displayRound(bal.km)[m.id] ?? 0)})`).join(', ')}</p></>}
         </div>
@@ -218,20 +228,26 @@ export function Members() {
         <input className="field" placeholder="Nome" aria-label="Nome" value={name} onChange={(e) => setName(e.target.value)} maxLength={40} autoFocus />
         {dupName(name) && <p className="foot" style={{ color: 'var(--danger)' }}>C'è già qualcuno con questo nome nel gruppo.</p>}
         <p className="foot">Parte da zero: i viaggi già fatti non gli vengono attribuiti. Quando aprirà l'invito potrà collegarsi a questo nome.</p></Sheet>}
-      {sheet === 'name' && <Sheet title="Il tuo nome" onClose={() => setSheet(null)} footer={<Btn busy={busy} disabled={!name.trim()} onClick={() => run(async () => { await store.updateMe(data.group.id, { name: name.trim() }); await reload(); setSheet(null) })}>Salva</Btn>}>
-        <input className="field" aria-label="Nome" value={name} onChange={(e) => setName(e.target.value)} maxLength={40} autoFocus /></Sheet>}
+      {sheet === 'name' && <Sheet title="Il tuo nome" onClose={() => setSheet(null)} footer={<Btn busy={busy} disabled={!name.trim() || dupName(name, me.id)} onClick={() => run(async () => { await store.updateMe(data.group.id, { name: name.trim() }); await reload(); setSheet(null) })}>Salva</Btn>}>
+        <input className="field" aria-label="Nome" value={name} onChange={(e) => setName(e.target.value)} maxLength={40} autoFocus />
+        {dupName(name, me.id) && <p className="foot" style={{ color: 'var(--danger)' }}>C'è già qualcuno con questo nome nel gruppo: aggiungi l'iniziale del cognome.</p>}</Sheet>}
       {sheet === 'home' && <Sheet title="Casa tua" onClose={() => setSheet(null)}>
-        <PlaceSearch autoFocus placeholder="Via e comune" onPick={(f) => run(async () => { await store.updateMe(data.group.id, { home: { lat: f.lat, lng: f.lng, label: [f.name, f.address].filter(Boolean).join(', ') } }); await reload(); setSheet(null); toast('Casa salvata') })}>
-          {me.home && <Btn kind="danger" onClick={() => run(async () => { await store.updateMe(data.group.id, { home: null }); await reload(); setSheet(null) })}>Rimuovi la casa salvata</Btn>}
+        {me.home && <><p className="label">Indirizzo attuale</p><div className="list" style={{ marginBottom: 16 }}><div className="row"><Icon n="home" /><span className="grow t wrap-t">{me.home.label}</span></div></div><p className="label">Nuovo indirizzo</p></>}
+        <PlaceSearch autoFocus={!me.home} placeholder="Via e comune" onPick={(f) => run(async () => { await store.updateMe(data.group.id, { home: { lat: f.lat, lng: f.lng, label: [f.name, f.address].filter(Boolean).join(', ') } }); await reload(); setSheet(null); toast('Casa salvata') })}>
+          {me.home && <Btn kind="danger" onClick={() => setSheet('homeOff')}>Rimuovi la casa salvata</Btn>}
         </PlaceSearch></Sheet>}
-      {sheet === 'member' && editing && <Sheet title="Membro senza account" onClose={() => setSheet(null)} footer={<><Btn busy={busy} disabled={!name.trim() || dupName(name, editing)} onClick={() => run(async () => { await store.renameMember(data.group.id, editing, name.trim()); await reload(); setSheet(null) })}>Salva nome</Btn><div style={{ height: 8 }} /><Btn kind="danger" onClick={() => run(async () => { await store.removeMember(data.group.id, editing); await reload(); setSheet(null); toast('Membro tolto dal gruppo: resta nello storico') })}>Togli dal gruppo</Btn></>}>
+      {sheet === 'homeOff' && <Sheet title="Rimuovere la casa?" onClose={() => setSheet('home')} footer={<><Btn busy={busy} className="btn-danger" onClick={() => run(async () => { await store.updateMe(data.group.id, { home: null }); await reload(); setSheet(null); toast('Casa rimossa') })}>Rimuovi</Btn><div style={{ height: 8 }} /><Btn kind="gray" onClick={() => setSheet('home')}>Annulla</Btn></>}>
+        <p style={{ margin: '0 4px', lineHeight: 1.4 }}>Nelle prossime uscite salirai alla partenza del conducente. Le uscite già salvate non cambiano.</p></Sheet>}
+      {sheet === 'member' && editing && <Sheet title="Membro senza account" onClose={() => setSheet(null)} footer={<><Btn busy={busy} disabled={!name.trim() || dupName(name, editing)} onClick={() => run(async () => { await store.renameMember(data.group.id, editing, name.trim()); await reload(); setSheet(null) })}>Salva nome</Btn><div style={{ height: 8 }} /><Btn kind="danger" onClick={() => setSheet('memberOff')}>Togli dal gruppo</Btn></>}>
         <input className="field" aria-label="Nome" value={name} onChange={(e) => setName(e.target.value)} maxLength={40} />
         {dupName(name, editing) && <p className="foot" style={{ color: 'var(--danger)' }}>C'è già qualcuno con questo nome nel gruppo.</p>}
         <p className="foot">Quando aprirà l'invito potrà collegarsi a questo nome. Se lo togli, i viaggi a cui ha partecipato restano nello storico.</p></Sheet>}
+      {sheet === 'memberOff' && editing && <Sheet title={`Togliere ${byIdM(editing)?.name} dal gruppo?`} onClose={() => setSheet('member')} footer={<><Btn busy={busy} className="btn-danger" onClick={() => run(async () => { await store.removeMember(data.group.id, editing); await reload(); setSheet(null); toast('Membro tolto dal gruppo: resta nello storico') })}>Togli dal gruppo</Btn><div style={{ height: 8 }} /><Btn kind="gray" onClick={() => setSheet('member')}>Annulla</Btn></>}>
+        <p style={{ margin: '0 4px', lineHeight: 1.4 }}>{balNote(editing)} I viaggi a cui ha partecipato restano nello storico.</p></Sheet>}
       {sheet === 'invite' && <Sheet title="Nuovo link di invito" onClose={() => setSheet(null)} footer={<><Btn busy={busy} onClick={() => run(async () => { await store.regenerateInvite(data.group.id); await reload(); setSheet(null); toast('Nuovo link pronto: il vecchio non funziona più') })}>Crea nuovo link</Btn><div style={{ height: 8 }} /><Btn kind="gray" onClick={() => setSheet(null)}>Annulla</Btn></>}>
         <p style={{ margin: '0 4px', lineHeight: 1.4 }}>Il link attuale smette di funzionare. Chi è già nel gruppo resta dentro. Utile se il link è finito nelle mani sbagliate.</p></Sheet>}
-      {sheet === 'leave' && <Sheet title="Lasciare il gruppo?" onClose={() => setSheet(null)} footer={<Btn busy={busy} style={{ background: 'var(--danger)' }} onClick={() => run(async () => { await store.leaveGroup(data.group.id); window.location.reload() })}>Lascia il gruppo</Btn>}>
-        <p style={{ margin: '0 4px', lineHeight: 1.4 }}>I tuoi viaggi restano nello storico e i saldi degli altri non cambiano. Non vedrai più i dati del gruppo finché non rientri con un invito.</p></Sheet>}
+      {sheet === 'leave' && <Sheet title="Lasciare il gruppo?" onClose={() => setSheet(null)} footer={<><Btn busy={busy} className="btn-danger" onClick={() => run(async () => { await store.leaveGroup(data.group.id); window.location.reload() })}>Lascia il gruppo</Btn><div style={{ height: 8 }} /><Btn kind="gray" onClick={() => setSheet(null)}>Resta nel gruppo</Btn></>}>
+        <p style={{ margin: '0 4px', lineHeight: 1.4 }}>{balNote(me.id)} I tuoi viaggi restano nello storico e i saldi degli altri non cambiano. Non vedrai più i dati del gruppo finché non rientri con un invito; rientrando ritroverai lo stesso saldo.</p></Sheet>}
     </div>
   )
 }

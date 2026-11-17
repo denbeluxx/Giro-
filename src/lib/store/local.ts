@@ -99,6 +99,7 @@ export const localStore: Store = {
     const mine = g.members.find((m) => m.userId === 'demo-user')
     if (mine) mine.leftAt = null
     else if (claimId) { const m = g.members.find((x) => x.id === claimId && !x.userId); if (!m) throw new Error('Questo nome è appena stato scelto da un altro account. Scegli di nuovo.'); m.userId = 'demo-user' }
+    else if (g.members.some((m) => !m.leftAt && m.name.trim().toLowerCase() === myName.trim().toLowerCase())) throw new Error('Nel gruppo c\'è già qualcuno con questo nome: aggiungi l\'iniziale del cognome.')
     else g.members.push({ id: uid(), groupId: g.group.id, userId: 'demo-user', name: myName, color: g.members.length % 8, home: null, homeShared: false, joinedAt: new Date().toISOString(), leftAt: null })
     write(db); return g.group.id
   },

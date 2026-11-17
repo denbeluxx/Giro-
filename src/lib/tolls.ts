@@ -65,7 +65,7 @@ export function matchGates(entry: Pt, exit: Pt, tollMeters: number): { from: Gat
       if (dt > 5000) continue
       const gap = Math.abs(tollMeters - Math.abs(f.km - t.km) * 1000)
       // se il tratto a pagamento è molto più lungo della distanza tra i caselli, l'uscita è un'altra
-      if (gap > Math.max(2500, Math.abs(f.km - t.km) * 1000 * 0.15)) continue
+      if (gap > Math.max(2500, Math.abs(f.km - t.km) * 1000 * 0.05)) continue
       const score = df + dt + gap
       if (!best || score < best.score) best = { from: f, to: t, score }
     }
@@ -127,7 +127,9 @@ export function refreshTolls<L extends { segs: { meters: number; seconds: number
     let changed = false
     const segs = l.segs.map((s) => {
       if (s.toll.road !== 'A4' || !s.toll.from || !s.toll.to || s.toll.status === 'out') return s
-      const fresh = a4Toll(s.toll.from, s.toll.to, groupTolls)
+      const t = a4Toll(s.toll.from, s.toll.to, groupTolls)
+      // su una distanza stimata il pedaggio resta da verificare anche con la tariffa del gruppo
+      const fresh: Toll = s.toll.estimate ? { ...t, status: 'verify', estimate: true, note: s.toll.note } : t
       if (fresh.cents === s.toll.cents && fresh.status === s.toll.status) return s
       changed = true
       return { ...s, toll: fresh }

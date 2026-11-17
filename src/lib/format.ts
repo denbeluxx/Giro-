@@ -20,13 +20,13 @@ export const fmtDateYear = (iso: string) => {
 export const fmtDateLong = (iso: string) => new Date(iso).toLocaleDateString('it-IT', { weekday: 'long', day: 'numeric', month: 'long' })
 export const fmtTime = (iso: string) => new Date(iso).toLocaleTimeString('it-IT', { hour: '2-digit', minute: '2-digit' })
 /**
- * Numero scritto da una persona: «12», «12,5», «12.5», «1.250,5». Niente segni, lettere o notazione esponenziale.
+ * Numero scritto da una persona: «12», «12,5», «12.5», «0.800» (= 0,8), «1.250,5» (= 1250,5). Niente segni, lettere o notazione esponenziale.
  * Restituisce null se il testo non è un numero valido o supera il massimo.
  */
 export function parseNum(s: string, max = 1e6): number | null {
   const t = s.trim().replace(/\s/g, '')
   let v: number
-  if (/^\d{1,3}(\.\d{3})+(,\d+)?$/.test(t)) v = parseFloat(t.replace(/\./g, '').replace(',', '.'))
+  if (/^[1-9]\d{0,2}(\.\d{3})+,\d+$/.test(t) || /^[1-9]\d{0,2}(\.\d{3}){2,}$/.test(t)) v = parseFloat(t.replace(/\./g, '').replace(',', '.'))
   else if (/^\d+([.,]\d+)?$/.test(t)) v = parseFloat(t.replace(',', '.'))
   else return null
   return isFinite(v) && v <= max ? v : null

@@ -42,6 +42,7 @@ export interface Toll {
   from?: string // id casello
   to?: string
   note?: string
+  estimate?: boolean // ricavato da una distanza stimata: mai certo
 }
 
 /** Tratto tra due tappe consecutive: gli occupanti non cambiano. */

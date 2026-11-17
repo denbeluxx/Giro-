@@ -239,6 +239,9 @@ begin
     if n > 0 then return g; end if;
     raise exception 'Questo nome è appena stato scelto da un altro account. Scegli di nuovo.';
   end if;
+  if exists (select 1 from public.members where group_id = g and left_at is null and lower(trim(name)) = lower(trim(p_name))) then
+    raise exception 'Nel gruppo c''è già qualcuno con questo nome: aggiungi l''iniziale del cognome.';
+  end if;
   select count(*) into n from public.members where group_id = g;
   insert into public.members(group_id, user_id, name, color) values (g, auth.uid(), p_name, n % 8);
   return g;

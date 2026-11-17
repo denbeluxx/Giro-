@@ -35,11 +35,12 @@ export function Icon({ n, size = 22, sw = 1.9 }: { n: keyof typeof P | string; s
   return <svg width={size} height={size} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={sw} strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">{P[n]}</svg>
 }
 
-const COLORS: [string, string][] = [['#7d7aff', '#5856d6'], ['#ffb340', '#ff9500'], ['#5ac8fa', '#0a84ff'], ['#ff6f91', '#ff2d55'], ['#63e6be', '#12b886'], ['#ffd43b', '#f59f00'], ['#da77f2', '#ae3ec9'], ['#a9b1bd', '#6b7280']]
+// colori degli avatar: su quelli chiari le iniziali sono scure per restare leggibili
+const COLORS: [string, string, string][] = [['#7d7aff', '#5856d6', '#fff'], ['#ffb340', '#ff9500', '#3a2000'], ['#5ac8fa', '#0a84ff', '#fff'], ['#ff6f91', '#ff2d55', '#fff'], ['#63e6be', '#12b886', '#003d2b'], ['#ffd43b', '#f59f00', '#3a2a00'], ['#da77f2', '#ae3ec9', '#fff'], ['#a9b1bd', '#6b7280', '#fff']]
 export function Avatar({ m, size = 36 }: { m?: Pick<Member, 'name' | 'color'> | null; size?: number }) {
   const c = COLORS[(m?.color ?? 7) % COLORS.length]
   const initials = (m?.name ?? '?').trim().split(/\s+/).map((w) => w[0]).slice(0, 2).join('').toUpperCase()
-  return <span className="avatar" aria-hidden="true" style={{ width: size, height: size, fontSize: size * 0.4, '--a1': c[0], '--a2': c[1] } as CSSProperties}>{initials}</span>
+  return <span className="avatar" aria-hidden="true" style={{ width: size, height: size, fontSize: size * 0.4, color: c[2], '--a1': c[0], '--a2': c[1] } as CSSProperties}>{initials}</span>
 }
 
 export function Btn({ kind = 'primary', busy, small, icon, children, ...p }: { kind?: 'primary' | 'tinted' | 'gray' | 'danger'; busy?: boolean; small?: boolean; icon?: string; children: ReactNode } & React.ButtonHTMLAttributes<HTMLButtonElement>) {
@@ -65,9 +66,11 @@ export function Sheet({ title, onClose, children, footer }: { title: string; onC
   const [out, setOut] = useState(false)
   const ref = useRef<HTMLDivElement>(null)
   const drag = useRef<{ y: number; dy: number } | null>(null)
+  // chi aveva il fuoco prima dell'apertura (letto al primo disegno, prima dell'autoFocus del campo)
+  const opener = useRef<HTMLElement | null>(typeof document !== 'undefined' ? (document.activeElement as HTMLElement | null) : null)
   const close = useCallback(() => { if (reducedMotion()) return onClose(); setOut(true); setTimeout(onClose, 220) }, [onClose])
   useEffect(() => {
-    const before = document.activeElement as HTMLElement | null
+    const before = opener.current
     const k = (e: KeyboardEvent) => {
       if (e.key === 'Escape') return close()
       if (e.key !== 'Tab' || !ref.current) return

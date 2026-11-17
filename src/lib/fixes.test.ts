@@ -102,6 +102,10 @@ describe('numeri e arrotondamenti', () => {
     expect(parseNum('12abc')).toBeNull()
     expect(parseNum('1e30')).toBeNull()
     expect(parseNum('2500', 2000)).toBeNull()
+    expect(parseNum('0.800')).toBe(0.8)
+    expect(parseNum('1.25')).toBe(1.25)
+    expect(parseNum('1.234')).toBe(1.234)
+    expect(parseNum('1.234.567', 1e7)).toBe(1234567)
     expect(kmField(4999)).toBe('4,999')
   })
   it('km inseriti a mano senza tappe: tutti i presenti dividono', () => {
@@ -125,7 +129,7 @@ describe('frasi del suggerimento', () => {
   it('spareggio spiegato con il criterio decisivo', () => {
     const s = suggestDriver(ms, ['Andrea', 'Marco', 'Sara'], [], { km: {}, eur: {}, lastDrove: { Andrea: '2026-10-01' } }, fmt)!
     expect(s.id).toBe('Marco')
-    expect(s.reason).toBe('Marco e Sara sono pari e nessuno dei due ha ancora guidato: Marco è nel gruppo da più tempo.')
+    expect(s.reason).toBe('Marco e Sara sono pari e non hanno ancora guidato: Marco è nel gruppo da più tempo.')
     expect(suggestDriver(ms, ['Sara'], [], { km: {}, eur: {}, lastDrove: {} }, fmt)!.reason).toBe('C\'è solo Sara.')
   })
 })

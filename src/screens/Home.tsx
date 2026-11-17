@@ -5,7 +5,7 @@ import { fmtDate, fmtEur, fmtKm, fmtKmSigned, fmtTime, kmNum, roundKm } from '..
 import { SIM } from '../lib/routing'
 import { store } from '../lib/store'
 import type { Trip } from '../lib/types'
-import { Avatar, Btn, Count, Icon } from '../ui/kit'
+import { Avatar, Btn, Count, Icon, Sheet } from '../ui/kit'
 import { clearDraft, loadDraft } from './Plan'
 
 export const tone = (v: number) => (roundKm(v) > 0 ? 'pos' : roundKm(v) < 0 ? 'neg' : 'dim')
@@ -24,15 +24,16 @@ export function Home() {
   const meaning = my > 0 ? 'Hai guidato più della tua quota: il gruppo ti deve dei passaggi.' : my < 0 ? 'Hai usato più passaggi di quanti ne hai dati: tocca a te recuperare.' : 'Sei in pari: hai guidato esattamente la tua quota.'
   const ranked = [...active, ...left].sort((a, b) => (shown[a.id] ?? 0) - (shown[b.id] ?? 0))
   const [, force] = useState(0)
+  const [ask, setAsk] = useState(false)
   const draft = loadDraft(data.group.id)
 
-  const banner = (t: Trip, hot: boolean, extra?: number) => {
+  const banner = (t: Trip, hot: boolean) => {
     const d = byId(t.legs[0]?.driverId)
     return (
       <button key={t.id} className={`banner${hot ? ' hot' : ''}`} onClick={() => push({ s: 'trip', id: t.id })} style={{ marginTop: 12 }}>
         <span className="ic"><Icon n={hot ? 'check' : 'clock'} size={24} /></span>
         <span className="grow" style={{ flex: 1, minWidth: 0 }}>
-          <div style={{ fontWeight: 600 }}>{hot ? 'Conferma il viaggio' : 'Prossima uscita'}{extra ? <span className="banner-count"> · altri {extra}</span> : null}</div>
+          <div style={{ fontWeight: 600 }}>{hot ? 'Conferma il viaggio' : 'Prossima uscita'}</div>
           <div className="s">{t.dest.name} · {fmtDate(t.startsAt)} {fmtTime(t.startsAt)} · {d ? `guida ${d.name}` : 'conducente da decidere'}</div>
         </span>
         <Icon n="chev" size={18} />
@@ -66,7 +67,8 @@ export function Home() {
           </button>
           <button className="nav-btn" aria-label="Elimina la bozza" onClick={() => { clearDraft(data.group.id); force((x) => x + 1) }}><Icon n="x" size={20} /></button>
         </div>}
-        {due.slice(0, 2).map((t, i) => banner(t, true, i === 1 && due.length > 2 ? due.length - 2 : undefined))}
+        {due.slice(0, 2).map((t) => banner(t, true))}
+        {due.length > 2 && <button className="link-under" onClick={() => push({ s: 'history' })}>Altri {due.length - 2} viaggi da confermare nello storico</button>}
         {next && banner(next, false)}
 
         <div className="section">
@@ -106,7 +108,9 @@ export function Home() {
           </button></div>
         </div>
       </div>
-      <div className="cta"><Btn icon="car" onClick={() => push({ s: 'plan', mode: 'plan' })}>Organizza uscita</Btn></div>
+      <div className="cta"><Btn icon="car" onClick={() => (draft ? setAsk(true) : push({ s: 'plan', mode: 'plan' }))}>Organizza uscita</Btn></div>
+      {ask && draft && <Sheet title="Hai un'uscita in preparazione" onClose={() => setAsk(false)} footer={<><Btn onClick={() => { setAsk(false); push({ s: 'plan', mode: draft.mode, resume: true }) }}>Riprendi {draft.dest?.name ?? 'la bozza'}</Btn><div style={{ height: 8 }} /><Btn kind="gray" onClick={() => { clearDraft(data.group.id); setAsk(false); push({ s: 'plan', mode: 'plan' }) }}>Nuova uscita (elimina la bozza)</Btn></>}>
+        <p style={{ margin: '0 4px', lineHeight: 1.4 }}>Vuoi continuare quella o ricominciare da capo?</p></Sheet>}
     </div>
   )
 }
