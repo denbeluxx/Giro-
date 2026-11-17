@@ -112,7 +112,7 @@ export function TripView({ id, fresh }: { id: ID; fresh?: boolean }) {
     if (saved) { setDone(tripEffect(saved)); toast(`Viaggio a ${trip.dest.name} confermato`) }
   })
   const saveTolls = (legs: Leg[], remember: Record<string, GroupToll>) => run(async () => {
-    if (Object.keys(remember).length) await store.updateGroup(data.group.id, { settings: { ...data.group.settings, tolls: { ...(data.group.settings.tolls ?? {}), ...remember } } })
+    for (const [k, v] of Object.entries(remember)) await store.setGroupToll(data.group.id, k, v)
     const saved = await saveTrip({ ...trip, legs, updatedBy: me.id, updatedAt: new Date().toISOString() }, trip.version)
     if (saved) { setSheet(null); if (Object.keys(remember).length) { await app.reload(); toast('Tariffa ricordata per il gruppo') } }
   })

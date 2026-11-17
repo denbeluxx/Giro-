@@ -27,19 +27,22 @@ function leg(v: any): Leg | null {
   const stops = (Array.isArray(v.stops) ? v.stops : []).map(stop).filter(Boolean) as Stop[]
   let segs = Array.isArray(v.segs) ? (v.segs.map(seg).filter(Boolean) as Seg[]) : null
   if (segs && segs.length !== Math.max(0, stops.length - 1)) segs = null
+  if (segs && (segs.reduce((a, x) => a + x.meters, 0) > 2e6 || segs.reduce((a, x) => a + (x.toll.cents ?? 0), 0) > 50000)) return null
   const geometry = Array.isArray(v.geometry) ? v.geometry.filter((p: any) => Array.isArray(p) && num(p[0]) != null && num(p[1]) != null).slice(0, 20000) : null
   const tg = v.tollGates && str(v.tollGates.from) && str(v.tollGates.to) ? { from: v.tollGates.from, to: v.tollGates.to } : null
   return {
     kind: v.kind === 'ritorno' ? 'ritorno' : 'andata', driverId: str(v.driverId), designated: v.designated === true, time: str(v.time) ?? undefined,
     stops, segs, geometry, routeState: ['ok', 'stimato', 'missing'].includes(v.routeState) ? v.routeState : segs ? 'stimato' : 'missing',
-    actualMeters: num(v.actualMeters, 0, 1e7), tollPayerId: str(v.tollPayerId), tollOverride: num(v.tollOverride, 0, 1e6), tollGates: tg,
+    actualMeters: num(v.actualMeters, 0, 2e6), tollPayerId: str(v.tollPayerId), tollOverride: num(v.tollOverride, 0, 50000), tollGates: tg,
   }
 }
 
 export function sanitizeTrip(t: any): Trip | null {
   try {
     if (!t || typeof t !== 'object' || !str(t.id)) return null
-    const legs = (Array.isArray(t.legs) ? t.legs : []).map(leg).filter(Boolean).slice(0, 2) as Leg[]
+    const raw = Array.isArray(t.legs) ? t.legs : []
+    const legs = raw.map(leg).filter(Boolean).slice(0, 2) as Leg[]
+    if (legs.length !== Math.min(2, raw.length)) return null // una tratta fuori scala invalida tutto il viaggio
     const lat = num(t.dest?.lat, -90, 90), lng = num(t.dest?.lng, -180, 180)
     if (!legs.length || lat == null || lng == null || !str(t.startsAt) || isNaN(Date.parse(t.startsAt))) return null
     return {

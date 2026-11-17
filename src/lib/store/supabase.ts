@@ -102,7 +102,7 @@ export function supabaseStore(url: string, key: string): Store {
       if (expectedVersion == null) {
         // id generato dal dispositivo: un secondo invio dello stesso viaggio non crea doppioni
         const r = await sb.from('trips').upsert({ ...tripRow(trip), version: 1 }, { onConflict: 'id', ignoreDuplicates: true }).select()
-        if (r.error) throw new Error(r.error.message)
+        if (r.error) throw new Error(friendly(r.error.message))
         if (r.data?.length) return toTrip(r.data[0])
         return toTrip(must(await sb.from('trips').select('*').eq('id', trip.id).single()))
       }
@@ -133,6 +133,7 @@ export function supabaseStore(url: string, key: string): Store {
       }
       if (Object.keys(upd).length) must(await sb.from('members').update(upd).eq('id', cur.id).select())
     },
+    async setGroupToll(groupId, key, toll) { must(await sb.rpc('set_group_toll', { p_group: groupId, p_key: key, p_value: toll })) },
     async updateGroup(groupId, patch) { return toGroup(must(await sb.from('groups').update(patch).eq('id', groupId).select().single())) },
   }
 }

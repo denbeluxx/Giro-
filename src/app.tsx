@@ -7,7 +7,7 @@ import { Home } from './screens/Home'
 import { History, Members, Money, Places } from './screens/Others'
 import { Plan } from './screens/Plan'
 import { TripView } from './screens/TripView'
-import { Btn, Empty, Icon, Notice, Skel, ToastHost, reducedMotion, useBusy, useToast } from './ui/kit'
+import { Btn, Empty, Icon, Notice, Skel, ToastHost, openSheets, reducedMotion, useBusy, useToast } from './ui/kit'
 
 export type Route =
   | { s: 'home' } | { s: 'members' } | { s: 'places' } | { s: 'history' } | { s: 'money' }
@@ -52,7 +52,9 @@ export function setTheme(t: Theme) {
 }
 
 const params = new URLSearchParams(window.location.search)
-const clearParams = () => { try { history.replaceState(null, '', window.location.pathname) } catch { /* */ } }
+/** Uscita volontaria in corso: non va confusa con una sessione scaduta. */
+export const signingOut = { current: false }
+const clearParams = () => { try { history.replaceState(history.state, '', window.location.pathname) } catch { /* */ } }
 
 export function App() {
   const [session, setSession] = useState<Session | null | undefined>(undefined)
@@ -63,7 +65,18 @@ export function App() {
   const [err, setErr] = useState<string | null>(null)
   const [missing, setMissing] = useState(false)
 
-  useEffect(() => { setTheme(getTheme()); store.session().then(setSession).catch(() => setSession(null)); return store.onAuth(setSession) }, [])
+  const [expired, setExpired] = useState(false)
+  const had = useRef(false)
+  useEffect(() => {
+    setTheme(getTheme())
+    store.session().then((s) => { had.current = !!s; setSession(s) }).catch(() => setSession(null))
+    return store.onAuth((s) => {
+      // la sessione è sparita senza che l'utente sia uscito: è scaduta o revocata
+      if (!s && had.current && !signingOut.current) setExpired(true)
+      had.current = !!s
+      setSession(s)
+    })
+  }, [])
 
   const loadGroups = useCallback(async () => {
     setErr(null)
@@ -82,7 +95,7 @@ export function App() {
 
   let body: ReactNode
   if (session === undefined) body = <Splash />
-  else if (!session) body = <Auth invite={!!invite} />
+  else if (!session) body = <Auth invite={!!invite} expired={expired} />
   else if (invite) body = <Invite code={invite} done={(id) => { clearParams(); setInvite(null); if (id) try { localStorage.setItem('giro-group', id) } catch { /* */ } }} />
   else if (err) body = <div className="screen"><div className="scroll" style={{ paddingTop: 120 }}><Empty icon="alert" title="Connessione non riuscita" text="Non riesco a caricare i tuoi gruppi. Controlla la rete e riprova."><Btn onClick={loadGroups}>Riprova</Btn></Empty></div></div>
   else if (!groups) body = <Splash />
@@ -120,7 +133,7 @@ function GroupProvider({ groupId, groups, switchGroup, deepTrip, missing, clearD
   }, [groupId])
   useEffect(() => { reload(); return store.subscribe(groupId, reload) }, [groupId, reload])
   useEffect(() => { if (data && missing) { toast('Il link apre un\'uscita che non esiste o non è di questo gruppo.'); clearDeep() } }, [data, missing]) // eslint-disable-line react-hooks/exhaustive-deps
-  useEffect(() => { if (data && deepTrip) { if (data.trips.some((t) => t.id === deepTrip)) { forward(); setStack([{ s: 'home' }, { s: 'trip', id: deepTrip }]) } else toast('Questa uscita non è più disponibile.'); clearDeep() } }, [data, deepTrip]) // eslint-disable-line react-hooks/exhaustive-deps
+  useEffect(() => { if (data && deepTrip) { clearDeep(); if (data.trips.some((t) => t.id === deepTrip)) { forward(); setStack([{ s: 'home' }, { s: 'trip', id: deepTrip }]) } else toast('Questa uscita non è più disponibile.') } }, [data, deepTrip]) // eslint-disable-line react-hooks/exhaustive-deps
 
   // ---- Navigazione legata alla cronologia: il tasto o il gesto Indietro del telefono torna indietro di un livello ----
   const level = useRef(0)
@@ -139,6 +152,8 @@ function GroupProvider({ groupId, groups, switchGroup, deepTrip, missing, clearD
       if (pending.current) { const k = pending.current; pending.current = null; level.current = d; if (k === 'leave') popStack(); return }
       if (d >= level.current) { level.current = d; return }
       level.current = d
+      // prima si chiude un foglio aperto, restando sulla stessa schermata
+      if (openSheets.length) { openSheets[openSheets.length - 1](); forwardRef.current(); return }
       const h = handlers.current[handlers.current.length - 1]
       if (h && h()) return
       popStack()
@@ -147,6 +162,8 @@ function GroupProvider({ groupId, groups, switchGroup, deepTrip, missing, clearD
     return () => window.removeEventListener('popstate', onPop)
   }, [popStack])
   const forward = useCallback(() => { level.current += 1; try { history.pushState({ d: level.current }, '') } catch { /* */ } }, [])
+  const forwardRef = useRef(forward)
+  forwardRef.current = forward
   const onBack = useCallback((fn: () => boolean) => { handlers.current.push(fn); return () => { handlers.current = handlers.current.filter((h) => h !== fn) } }, [])
   const push = useCallback((r: Route) => { forward(); transition('push', () => setStack((s) => [...s, r])) }, [forward])
   const pop = useCallback(() => { if (level.current > 0) history.back(); else popStack() }, [popStack])
@@ -171,7 +188,15 @@ function GroupProvider({ groupId, groups, switchGroup, deepTrip, missing, clearD
       setData((d) => d && { ...d, trips: d.trips.some((x) => x.id === saved.id) ? d.trips.map((x) => (x.id === saved.id ? saved : x)) : [saved, ...d.trips] })
       return saved
     } catch (e) {
-      if (e instanceof ConflictError) { await reload(); toast('Aggiornato da un altro dispositivo: dati ricaricati'); return null }
+      if (e instanceof ConflictError) {
+        const fresh = await store.loadGroup(groupId).catch(() => null)
+        if (fresh) setData(fresh)
+        const now = fresh?.trips.find((x) => x.id === t.id)
+        // la risposta precedente era andata persa ma il salvataggio era riuscito: nessun conflitto vero
+        if (now && now.status === t.status && JSON.stringify(now.legs) === JSON.stringify(t.legs)) return now
+        toast('Aggiornato da un altro dispositivo: dati ricaricati')
+        return null
+      }
       throw e
     }
   }, [reload, toast])
@@ -182,7 +207,7 @@ function GroupProvider({ groupId, groups, switchGroup, deepTrip, missing, clearD
     return {
       data, bal: balances(data.members, data.trips, data.settlements), me: map.get(data.meId)!, byId: (id) => (id ? map.get(id) : undefined),
       active: data.members.filter((m) => !m.leftAt), reload, push, pop, replace, home, forward, onBack, leave, collapse, saveTrip, groups, switchGroup,
-      signOut: () => { store.signOut() },
+      signOut: () => { signingOut.current = true; store.signOut() },
     }
   }, [data, reload, push, pop, replace, home, forward, onBack, leave, collapse, saveTrip, groups, switchGroup])
 
@@ -204,7 +229,7 @@ function GroupProvider({ groupId, groups, switchGroup, deepTrip, missing, clearD
 
 // ---- Accesso -------------------------------------------------------------------
 
-function Auth({ invite }: { invite: boolean }) {
+function Auth({ invite, expired }: { invite: boolean; expired?: boolean }) {
   const [email, setEmail] = useState('')
   const [code, setCode] = useState('')
   const [sent, setSent] = useState(false)
@@ -213,6 +238,7 @@ function Auth({ invite }: { invite: boolean }) {
     <div className="screen"><div className="scroll" style={{ paddingTop: 'calc(var(--sat) + 72px)' }}>
       <div className="avatar" style={{ width: 64, height: 64, borderRadius: 18, background: 'linear-gradient(140deg, var(--accent), #8e5cf0)', marginBottom: 20 }}><Icon n="car" size={34} /></div>
       <h1 className="title">Giro</h1>
+      {expired && <div style={{ marginBottom: 16 }}><Notice kind="info">Sessione scaduta: accedi di nuovo. Le uscite in preparazione sono ancora salvate su questo telefono.</Notice></div>}
       <p className="subtitle" style={{ fontSize: 17, marginBottom: 28 }}>{invite ? 'Accedi per entrare nel gruppo che ti ha invitato.' : 'Chi guida stasera? Chilometri, turni e pedaggi tra amici.'}</p>
       {!sent ? (
         <form onSubmit={(e) => { e.preventDefault(); run(async () => { await store.sendCode(email.trim()); setSent(true) }) }}>
@@ -251,7 +277,7 @@ function Groups({ groups, onOpen, onCreated }: { groups: GroupSummary[]; onOpen:
           <Btn busy={busy} disabled={!name.trim() || !me.trim()}>Crea gruppo</Btn>
         </form>
       </div>
-      {store.mode === 'cloud' && <><div style={{ height: 20 }} /><Btn kind="danger" onClick={() => store.signOut()}>Esci da questo dispositivo</Btn></>}
+      {store.mode === 'cloud' && <><div style={{ height: 20 }} /><Btn kind="danger" onClick={() => { signingOut.current = true; store.signOut() }}>Esci da questo dispositivo</Btn></>}
     </div></div>
   )
 }

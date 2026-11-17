@@ -53,7 +53,7 @@ create table if not exists public.trips (
     jsonb_typeof(data) = 'object' and jsonb_typeof(data->'legs') = 'array'
     and jsonb_typeof(data->'presentIds') = 'array' and jsonb_typeof(data->'dest') = 'object'
     and jsonb_array_length(case when jsonb_typeof(data->'legs') = 'array' then data->'legs' else '[]' end) between 1 and 2
-    and octet_length(data::text) < 200000, false)),
+    and octet_length(data::text) < 600000, false)),
   version int not null default 1,
   created_by uuid references public.members(id),
   updated_by uuid references public.members(id),
@@ -146,9 +146,27 @@ language sql stable security definer set search_path = public as $$
   select id from public.members where group_id = g and user_id = auth.uid() and left_at is null
 $$;
 
+-- Limiti realistici per i numeri del viaggio: niente km o pedaggi fuori scala inseriti a mano via API.
+create or replace function public.trip_values_ok(d jsonb) returns boolean language plpgsql immutable as $$
+declare l jsonb; m numeric; n int; c numeric;
+begin
+  for l in select * from jsonb_array_elements(d->'legs') loop
+    if coalesce(nullif(l->>'actualMeters', '')::numeric, 0) not between 0 and 2000000 then return false; end if;
+    if coalesce(nullif(l->>'tollOverride', '')::numeric, 0) not between 0 and 50000 then return false; end if;
+    select coalesce(sum(nullif(x->>'meters', '')::numeric), 0), count(*), coalesce(sum(nullif(x->'toll'->>'cents', '')::numeric), 0)
+      into m, n, c
+      from jsonb_array_elements(case when jsonb_typeof(l->'segs') = 'array' then l->'segs' else '[]'::jsonb end) x;
+    if m > 2000000 or n > 40 or c > 50000 then return false; end if;
+    if jsonb_typeof(l->'stops') = 'array' and jsonb_array_length(l->'stops') > 41 then return false; end if;
+  end loop;
+  return true;
+exception when others then return false;
+end $$;
+
 create or replace function public.trips_guard() returns trigger language plpgsql as $$
 declare me uuid := public.my_member(new.group_id);
 begin
+  if not public.trip_values_ok(new.data) then raise exception 'Il viaggio contiene valori fuori scala (km o pedaggi).'; end if;
   if tg_op = 'INSERT' then
     new.version := 1;
     new.updated_at := now();
@@ -266,6 +284,20 @@ begin
   update public.members set left_at = now() where id = p_member;
 end $$;
 
+-- Una tariffa alla volta: due telefoni che salvano tariffe diverse non si sovrascrivono.
+create or replace function public.set_group_toll(p_group uuid, p_key text, p_value jsonb) returns void
+language plpgsql security definer set search_path = public as $$
+begin
+  if not public.is_member(p_group) then raise exception 'accesso negato'; end if;
+  if p_key !~ '^[a-z-]+\|[a-z-]+$' then raise exception 'Coppia di caselli non valida'; end if;
+  if p_value is not null and coalesce((p_value->>'cents')::numeric, -1) not between 1 and 50000 then raise exception 'Importo non valido'; end if;
+  update public.groups set settings = case
+      when p_value is null then jsonb_set(settings, '{tolls}', coalesce(settings->'tolls', '{}'::jsonb) - p_key)
+      else jsonb_set(settings, '{tolls}', coalesce(settings->'tolls', '{}'::jsonb) || jsonb_build_object(p_key, p_value))
+    end
+  where id = p_group;
+end $$;
+
 -- Nuovo link di invito: il vecchio smette di funzionare.
 create or replace function public.regenerate_invite(p_group uuid) returns text
 language plpgsql security definer set search_path = public as $$
@@ -276,8 +308,8 @@ begin
   return c;
 end $$;
 
-revoke all on function public.create_group(text, text), public.invite_preview(text), public.join_group(text, text, uuid), public.leave_group(uuid), public.regenerate_invite(uuid), public.my_member(uuid), public.remove_placeholder(uuid) from public, anon;
-grant execute on function public.create_group(text, text), public.invite_preview(text), public.join_group(text, text, uuid), public.leave_group(uuid), public.regenerate_invite(uuid), public.is_member(uuid), public.my_member(uuid), public.remove_placeholder(uuid) to authenticated;
+revoke all on function public.create_group(text, text), public.invite_preview(text), public.join_group(text, text, uuid), public.leave_group(uuid), public.regenerate_invite(uuid), public.my_member(uuid), public.remove_placeholder(uuid), public.set_group_toll(uuid, text, jsonb) from public, anon;
+grant execute on function public.create_group(text, text), public.invite_preview(text), public.join_group(text, text, uuid), public.leave_group(uuid), public.regenerate_invite(uuid), public.is_member(uuid), public.my_member(uuid), public.remove_placeholder(uuid), public.set_group_toll(uuid, text, jsonb) to authenticated;
 
 -- ---------------------------------------------------------------------------
 -- Aggiornamenti in tempo reale tra dispositivi

@@ -1,4 +1,4 @@
-import type { Group, GroupData, GroupSettings, ID, Member, Place, Settlement, Trip } from '../types'
+import type { Group, GroupData, GroupSettings, GroupToll, ID, Member, Place, Settlement, Trip } from '../types'
 
 export class ConflictError extends Error {
   constructor() { super('Qualcun altro ha appena modificato questo viaggio.') }
@@ -42,4 +42,6 @@ export interface Store {
   removeMember(groupId: ID, id: ID): Promise<void>
   updateMe(groupId: ID, patch: { name?: string; home?: Member['home']; homeShared?: boolean }): Promise<void>
   updateGroup(groupId: ID, patch: { name?: string; settings?: GroupSettings }): Promise<Group>
+  /** Aggiunge, cambia o (con null) toglie una sola tariffa del gruppo, senza toccare le altre. */
+  setGroupToll(groupId: ID, key: string, toll: GroupToll | null): Promise<void>
 }

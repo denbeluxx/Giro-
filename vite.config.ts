@@ -17,12 +17,13 @@ export default defineConfig(({ mode }) => ({
           manifest: {
             name: 'Giro', short_name: 'Giro', lang: 'it',
             description: 'Chilometri, turni di guida e pedaggi tra amici',
-            theme_color: '#5856D6', background_color: '#F2F2F7',
+            theme_color: '#F2F2F7', background_color: '#F2F2F7',
             display: 'standalone', start_url: '.', scope: '.',
             icons: [
               { src: 'icon.svg', sizes: 'any', type: 'image/svg+xml', purpose: 'any' },
               { src: 'icon-192.png', sizes: '192x192', type: 'image/png' },
-              { src: 'icon-512.png', sizes: '512x512', type: 'image/png', purpose: 'any maskable' },
+              { src: 'icon-512.png', sizes: '512x512', type: 'image/png', purpose: 'any' },
+              { src: 'icon-512.png', sizes: '512x512', type: 'image/png', purpose: 'maskable' },
             ],
           },
           workbox: { navigateFallback: 'index.html', globPatterns: ['**/*.{js,css,html,svg,png}'] },

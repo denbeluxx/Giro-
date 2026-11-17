@@ -54,7 +54,7 @@ La chiave *anon* è pubblica per progetto: la protezione dei dati è nelle regol
 | Parte | Stato |
 |---|---|
 | Regole dei km, quote, pedaggi, rimborsi, suggerimento, giro delle case | **Verificate** con 40 test automatici (`npm test`) |
-| Schema del database, accessi, inviti, concorrenza, protezioni contro manomissioni | **Verificati** su Postgres con 32 controlli (`node tests/schema.check.mjs`) |
+| Schema del database, accessi, inviti, concorrenza, protezioni contro manomissioni | **Verificati** su Postgres con 37 controlli (`node tests/schema.check.mjs`) |
 | Interfaccia e flussi | **Verificati** in Chrome con viewport iPhone, 38 controlli (`python3 tests/e2e.py`), tema chiaro/scuro e «Riduci movimento» |
 | Percorsi stradali (OSRM) e ricerca (Photon) | Codice completo, lettura della risposta testata su dati di esempio. **Non provati dal vivo**: l'ambiente di sviluppo non poteva raggiungere quei server. Da provare al primo avvio. |
 | Supabase reale (email, tempo reale tra telefoni) | Schema provato su Postgres; **collegamento a un progetto Supabase vero non ancora provato**. |
@@ -84,12 +84,14 @@ Servizi usati, tutti gratuiti e senza chiavi: tessere mappa CARTO su dati OpenSt
 
 ## Collaudo
 
-Oltre ai test automatici, la versione è stata usata a fondo da 8 agenti di collaudo (flusso, conducente, km, pedaggi, mappa, conferma e storico, grafica e accessibilità, sicurezza). I problemi trovati sono stati corretti in quattro blocchi: saldi, sicurezza, flusso, grafica.
+Oltre ai test automatici, la versione è stata usata a fondo da 8 agenti di collaudo, in due giri (collaudo e verifica delle correzioni) (flusso, conducente, km, pedaggi, mappa, conferma e storico, grafica e accessibilità, sicurezza). I problemi trovati sono stati corretti in quattro blocchi: saldi, sicurezza, flusso, grafica.
 
 Protezioni principali:
 - un membro può modificare solo nome, colore e casa propri; «creato da» e «ultima modifica di» li scrive il database;
 - i viaggi con dati malformati vengono rifiutati dal database e ignorati dall'app;
 - rimborsi solo tra membri dello stesso gruppo; il link di invito si può rigenerare;
+- km e pedaggi fuori scala (oltre 2.000 km o 500 € per tratta) rifiutati dal database;
+- le tariffe del gruppo si salvano una alla volta, così due telefoni non si sovrascrivono;
 - la casa non condivisa non entra mai nei percorsi.
 
 ## Struttura
@@ -104,6 +106,12 @@ src/screens/          home, organizzazione, viaggio, storico, luoghi, pedaggi, m
 supabase/schema.sql   tabelle, regole di accesso, inviti
 tests/                collaudo database ed end-to-end
 ```
+
+## Limiti noti
+
+- Un membro del gruppo, usando direttamente il database, può ancora scrivere km o pedaggi falsi ma realistici: ogni modifica riporta però il suo nome.
+- Senza rete l'app mostra il caricamento per qualche secondo prima dell'errore (tentativi automatici della libreria Supabase); offline non c'è una copia dei saldi in sola lettura.
+- Da provare dal vivo: Safari su iPhone (app sulla Home), aggiornamento in tempo reale tra telefoni con Supabase.
 
 ## Rimandato alla versione successiva
 

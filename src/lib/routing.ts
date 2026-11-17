@@ -22,6 +22,13 @@ async function getJson(url: string, signal?: AbortSignal): Promise<any> {
     return await r.json()
   } finally { clearTimeout(timer) }
 }
+/** Al massimo 600 punti per il disegno sulla mappa, con 5 decimali (circa 1 m): il viaggio resta leggero. */
+export function simplify(g: [number, number][], max = 600): [number, number][] {
+  const r = (v: number) => Math.round(v * 1e5) / 1e5
+  const step = Math.max(1, Math.ceil(g.length / max))
+  const out = g.filter((_, i) => i % step === 0 || i === g.length - 1).map(([a, b]) => [r(a), r(b)] as [number, number])
+  return out
+}
 const coords = (pts: Pt[]) => pts.map((p) => `${p.lng.toFixed(6)},${p.lat.toFixed(6)}`).join(';')
 
 // --- Simulazione -----------------------------------------------------------------
@@ -76,7 +83,7 @@ export async function routeStops(stops: Stop[], tolls: Tolls, signal?: AbortSign
   if (j.code !== 'Ok' || !j.routes?.length) throw new Error('Nessun percorso trovato tra queste tappe')
   return j.routes.map((r: any): Route => ({
     state: 'ok',
-    geometry: r.geometry.coordinates.map((c: [number, number]) => [c[1], c[0]]),
+    geometry: simplify(r.geometry.coordinates.map((c: [number, number]) => [c[1], c[0]])),
     segs: r.legs.map((l: OsrmLeg) => ({ meters: l.distance, seconds: l.duration, toll: analyzeOsrmLeg(l, tolls) })),
   }))
 }

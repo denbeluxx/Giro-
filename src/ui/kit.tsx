@@ -61,14 +61,24 @@ export function Seg<T extends string>({ value, onChange, options }: { value: T; 
 
 export const reducedMotion = () => typeof matchMedia !== 'undefined' && matchMedia('(prefers-reduced-motion: reduce)').matches
 
-/** Foglio modale dal basso: si chiude con trascinamento, tocco sullo sfondo o Esc. */
-export function Sheet({ title, onClose, children, footer }: { title: string; onClose: () => void; children: ReactNode; footer?: ReactNode }) {
+/** Fogli aperti, dal più vecchio al più recente: il tasto Indietro del telefono chiude l'ultimo. */
+export const openSheets: (() => void)[] = []
+
+/** Foglio modale dal basso: si chiude con trascinamento, tocco sullo sfondo, Esc o tasto Indietro. */
+export function Sheet({ title, onClose, children, footer, onBackPress }: { title: string; onClose: () => void; children: ReactNode; footer?: ReactNode; onBackPress?: () => void }) {
   const [out, setOut] = useState(false)
   const ref = useRef<HTMLDivElement>(null)
   const drag = useRef<{ y: number; dy: number } | null>(null)
   // chi aveva il fuoco prima dell'apertura (letto al primo disegno, prima dell'autoFocus del campo)
   const opener = useRef<HTMLElement | null>(typeof document !== 'undefined' ? (document.activeElement as HTMLElement | null) : null)
   const close = useCallback(() => { if (reducedMotion()) return onClose(); setOut(true); setTimeout(onClose, 220) }, [onClose])
+  const backRef = useRef<() => void>(() => {})
+  backRef.current = onBackPress ?? close
+  useEffect(() => {
+    const fn = () => backRef.current()
+    openSheets.push(fn)
+    return () => { const i = openSheets.lastIndexOf(fn); if (i >= 0) openSheets.splice(i, 1) }
+  }, [])
   useEffect(() => {
     const before = opener.current
     const k = (e: KeyboardEvent) => {

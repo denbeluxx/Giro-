@@ -141,5 +141,6 @@ export const localStore: Store = {
   async renameMember(groupId, id, name) { const db = read(); const m = db.groups[groupId].members.find((x) => x.id === id && !x.userId); if (!m) throw new Error('Questo membro ha già un account: può cambiare nome solo lui.'); m.name = name; write(db) },
   async removeMember(groupId, id) { const db = read(); const m = db.groups[groupId].members.find((x) => x.id === id && !x.userId); if (!m) throw new Error('Si possono togliere solo i membri senza account'); m.leftAt = new Date().toISOString(); write(db) },
   async updateMe(groupId, patch) { const db = read(); const g = db.groups[groupId]; const m = g.members.find((x) => x.id === meOf(g))!; Object.assign(m, patch); write(db) },
+  async setGroupToll(groupId, key, toll) { const db = read(); const g = db.groups[groupId].group; const t = { ...(g.settings.tolls ?? {}) }; if (toll) t[key] = toll; else delete t[key]; g.settings = { ...g.settings, tolls: t }; write(db) },
   async updateGroup(groupId, patch) { const db = read(); const g = db.groups[groupId]; Object.assign(g.group, patch); write(db); return g.group },
 }

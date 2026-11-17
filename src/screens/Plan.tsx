@@ -403,7 +403,7 @@ export function Plan({ mode, edit, redo, at, resume }: { mode: 'plan' | 'record'
     </div>
   )
   const exitSheet = sheet?.k === 'exit' && (
-    <Sheet title={edit ? 'Uscire senza salvare?' : 'Lasciare l\'uscita?'} onClose={() => setSheet(null)} footer={<><Btn kind="gray" onClick={() => setSheet(null)}>Continua a modificare</Btn><div style={{ height: 8 }} /><Btn kind="danger" onClick={exit}>{edit ? 'Esci senza salvare' : 'Elimina la bozza'}</Btn></>}>
+    <Sheet title={edit ? 'Uscire senza salvare?' : 'Lasciare l\'uscita?'} onClose={() => setSheet(null)} onBackPress={() => exit()} footer={<><Btn kind="gray" onClick={() => setSheet(null)}>Continua a modificare</Btn><div style={{ height: 8 }} /><Btn kind="danger" onClick={exit}>{edit ? 'Esci senza salvare' : 'Elimina la bozza'}</Btn></>}>
       <p style={{ margin: '0 4px', lineHeight: 1.4 }}>{edit ? 'Le modifiche fatte qui andranno perse.' : 'Presenti, destinazione e percorso scelti finora andranno persi.'}</p>
     </Sheet>
   )
@@ -715,7 +715,7 @@ export function Plan({ mode, edit, redo, at, resume }: { mode: 'plan' | 'record'
       {sheet?.k === 'km' && <KmSheet trip={draft()} byId={byId} onClose={() => setSheet(null)} onSave={(l) => { setLegs(withEstimates(l)); setSheet(null) }} />}
       {sheet?.k === 'toll' && <TollSheet trip={draft()} people={presentPeople} groupTolls={tolls} meId={me.id} onClose={() => setSheet(null)} onSave={(l, remember: Record<string, GroupToll>) => {
         setLegs(l); setSheet(null)
-        if (Object.keys(remember).length) store.updateGroup(data.group.id, { settings: { ...data.group.settings, tolls: { ...(tolls ?? {}), ...remember } } }).then(() => { app.reload(); toast('Tariffa ricordata per il gruppo') }).catch(() => toast('Tariffa non salvata: riprova dal riepilogo'))
+        if (Object.keys(remember).length) Promise.all(Object.entries(remember).map(([k, v]) => store.setGroupToll(data.group.id, k, v))).then(() => { app.reload(); toast('Tariffa ricordata per il gruppo') }).catch(() => toast('Tariffa non salvata: riprova dal riepilogo'))
       }} />}
       {sheet?.k === 'who' && (
         <Sheet title={recording ? 'Variazione dei saldi' : edit ? 'Partecipanti e saldi' : 'Anteprima dei saldi'} onClose={() => setSheet(null)}>
