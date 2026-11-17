@@ -16,7 +16,6 @@
   /* LED: --lc è il colore acceso (r g b), --lh lo stesso in esadecimale */
   --lc: 220 224 230; --lh: #dce0e6;
   --led-pos: 61 255 138; --led-neg: 255 77 94; --led-warn: 255 176 32;
-  --mono: 'JetBrains Mono', ui-monospace, SFMono-Regular, Menlo, monospace;
   color-scheme: dark;
 }
 
@@ -296,7 +295,7 @@ body, .app { background: #16171a; }
 
 /* testi */
 .title { font-weight: 600; letter-spacing: -0.02em; }
-.section-h h2, .label, .hero .k, .mono-k { font-family: var(--mono); font-size: 11px; font-weight: 500; letter-spacing: 0.16em; text-transform: uppercase; color: var(--text2); }
+.section-h h2, .label, .hero .k, .kicker { font-size: 11px; font-weight: 600; letter-spacing: 0.14em; text-transform: uppercase; color: var(--text2); }
 .section-h { align-items: center; }
 .section-h .link { color: var(--text2); }
 .chrome-t { display: inline-block; background: var(--chrome-text); -webkit-background-clip: text; background-clip: text; color: transparent; }
@@ -316,33 +315,16 @@ body, .app { background: #16171a; }
 .lit-pos { --lc: var(--led-pos); --lh: var(--pos); }
 .lit-neg { --lc: var(--led-neg); --lh: var(--neg); }
 .lit-warn { --lc: var(--led-warn); --lh: var(--warn); }
-.led { width: 8px; height: 8px; border-radius: 50%; flex: none; background: var(--lh); box-shadow: 0 0 10px rgb(var(--lc) / 0.85); }
 
 /* Home: saldo personale */
 .hero { padding: 16px 20px 16px; }
-.hero-top { display: flex; align-items: center; justify-content: space-between; }
 .hero .big { font-weight: 600; font-size: 56px; letter-spacing: -0.04em; margin: 8px 0 10px; }
 .hero .big small { color: var(--lh); font-weight: 500; }
-.meter { position: relative; height: 12px; }
-.meter i { position: absolute; display: block; }
-.meter .track { left: 0; right: 0; top: 5px; height: 2px; border-radius: 1px; background: rgba(255, 255, 255, 0.1); }
-.meter .zero { left: 50%; top: 0; width: 1px; height: 12px; background: rgba(255, 255, 255, 0.35); }
-.meter .seg { top: 5px; height: 2px; background: var(--lh); box-shadow: 0 0 10px rgb(var(--lc) / 0.85); }
-.meter .knob { top: 1px; width: 10px; height: 10px; margin-left: -5px; border-radius: 50%; background: linear-gradient(135deg, #fff, #9aa0a8); box-shadow: 0 0 10px rgb(var(--lc) / 0.85); }
-.meter-l { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); margin: 6px 0 12px; font-family: var(--mono); font-size: 10px; letter-spacing: 0.08em; text-transform: uppercase; color: var(--text2); }
-.meter-l span:nth-child(2) { text-align: center; } .meter-l span:nth-child(3) { text-align: right; }
 .hero .caption { font-size: 14px; }
 .hchip { width: 100%; margin-top: 14px; display: flex; flex-direction: column; gap: 2px; min-height: 52px; padding: 8px 12px; border-radius: 12px; background: rgba(0, 0, 0, 0.25); border: 1px solid rgba(255, 255, 255, 0.07); text-align: left; transition: transform 0.16s var(--ease); }
 button.hchip:active { transform: scale(0.97); }
-.hchip .k { font-family: var(--mono); font-size: 10px; letter-spacing: 0.14em; text-transform: uppercase; color: var(--text2); display: flex; align-items: center; justify-content: space-between; }
+.hchip .k { font-size: 11px; font-weight: 600; letter-spacing: 0.14em; text-transform: uppercase; color: var(--text2); display: flex; align-items: center; justify-content: space-between; }
 .hchip .v { font-size: 15px; font-weight: 600; }
-/* mini grafico del saldo nella lista: centrato sullo zero */
-.vcol { display: flex; flex-direction: column; align-items: flex-end; gap: 3px; flex: none; }
-.mini { position: relative; width: 64px; height: 10px; flex: none; }
-.mini::before { content: ''; position: absolute; left: 50%; top: 0; width: 1px; height: 10px; background: rgba(255, 255, 255, 0.22); }
-.mini i { position: absolute; top: 3px; height: 4px; border-radius: 2px; }
-.mini i.p { left: 50%; background: var(--pos); box-shadow: 0 0 8px rgb(var(--led-pos) / 0.8); }
-.mini i.n { right: 50%; background: var(--neg); box-shadow: 0 0 8px rgb(var(--led-neg) / 0.8); }
 
 /* banner: da confermare in arancio, prossima uscita col colore di chi guida */
 .banner { padding: 14px 16px; }
@@ -351,7 +333,7 @@ button.hchip:active { transform: scale(0.97); }
 .banner.hot { --lc: var(--led-warn); --lh: var(--warn); color: var(--text); background: var(--satin) padding-box, var(--chrome) border-box; box-shadow: 0 0 20px rgb(var(--lc) / 0.32), 0 0 46px rgb(var(--lc) / 0.14), inset 0 0 0 1px rgb(var(--lc) / 0.5), inset 0 0 18px rgb(var(--lc) / 0.12), 0 12px 30px rgba(0, 0, 0, 0.35); }
 .banner.hot .s { color: var(--text2); }
 .banner.hot .ic { background: rgba(0, 0, 0, 0.28); color: var(--warn); }
-.banner .mono-k { font-size: 10px; color: var(--lh); margin-bottom: 2px; }
+.banner .kicker { font-size: 11px; color: var(--lh); margin-bottom: 2px; }
 .banner .bt { font-weight: 600; font-size: 18px; }
 .banner.draft { border: 1.5px dashed rgba(255, 255, 255, 0.32); background: rgba(0, 0, 0, 0.2); box-shadow: none; }
 .tile .ic { color: var(--text); }
@@ -386,11 +368,11 @@ button.hchip:active { transform: scale(0.97); }
 .switch { background: rgba(255, 255, 255, 0.12); }
 .switch::after { background: linear-gradient(135deg, #ffffff, #a4a9b0); }
 .switch[aria-checked='true'] { background: rgb(var(--led-pos) / 0.85); box-shadow: 0 0 14px rgb(var(--led-pos) / 0.45); }
-.pill { font-family: var(--mono); font-size: 10.5px; font-weight: 500; letter-spacing: 0.1em; text-transform: uppercase; background: rgba(0, 0, 0, 0.3); box-shadow: inset 0 0 0 1px rgba(255, 255, 255, 0.1); }
+.pill { font-size: 11px; font-weight: 600; letter-spacing: 0.1em; text-transform: uppercase; background: rgba(0, 0, 0, 0.3); box-shadow: inset 0 0 0 1px rgba(255, 255, 255, 0.1); }
 .pill.accent { background: rgba(0, 0, 0, 0.3); color: #fff; box-shadow: inset 0 0 0 1px rgba(255, 255, 255, 0.35), 0 0 10px rgba(255, 255, 255, 0.12); }
 .pill.warn { background: rgba(0, 0, 0, 0.3); color: var(--warn); box-shadow: inset 0 0 0 1px rgb(var(--led-warn) / 0.5), 0 0 12px rgb(var(--led-warn) / 0.25); }
 .pill.pos { background: rgba(0, 0, 0, 0.3); color: var(--pos); box-shadow: inset 0 0 0 1px rgb(var(--led-pos) / 0.45), 0 0 12px rgb(var(--led-pos) / 0.2); }
-.demo-flag { font-family: var(--mono); font-size: 10px; font-weight: 500; letter-spacing: 0.04em; text-transform: uppercase; background: rgba(0, 0, 0, 0.3); box-shadow: inset 0 0 0 1px rgb(var(--led-warn) / 0.45); }
+.demo-flag { font-size: 11px; font-weight: 600; letter-spacing: 0.06em; text-transform: uppercase; background: rgba(0, 0, 0, 0.3); box-shadow: inset 0 0 0 1px rgb(var(--led-warn) / 0.45); }
 .radio { box-shadow: inset 0 0 0 1.5px rgba(255, 255, 255, 0.28); }
 [aria-checked='true'] .radio { background: transparent; box-shadow: inset 0 0 0 1.5px #e6e9ed; color: var(--lh); }
 [aria-checked='true'] .radio svg { filter: drop-shadow(0 0 4px rgb(var(--lc) / 0.9)); }

@@ -32,7 +32,7 @@ export function Home() {
       <button key={t.id} className={`banner lit${hot ? ' hot' : ''}`} onClick={() => push({ s: 'trip', id: t.id })} style={{ marginTop: 12, ...(hot ? {} : led(d)) }}>
         <span className="ic"><Icon n={hot ? 'check' : 'clock'} size={24} /></span>
         <span className="grow" style={{ flex: 1, minWidth: 0 }}>
-          <div className="mono-k">{hot ? 'Conferma il viaggio' : 'Prossima uscita'}</div>
+          <div className="kicker">{hot ? 'Conferma il viaggio' : 'Prossima uscita'}</div>
           <div className="bt">{t.dest.name}</div>
           <div className="s">{fmtDate(t.startsAt)} {fmtTime(t.startsAt)} · {d ? `${hot ? 'guidava' : 'guida'} ${d.name}` : 'conducente da decidere'}</div>
         </span>
@@ -50,7 +50,7 @@ export function Home() {
         </button>
       </div>
       <div className="scroll has-cta">
-        <button onClick={() => push({ s: 'members' })} style={{ display: 'block' }}><div className="mono-k">Gruppo</div><h1 className="title">{data.group.name}</h1></button>
+        <button onClick={() => push({ s: 'members' })} style={{ display: 'block' }}><div className="kicker">Gruppo</div><h1 className="title">{data.group.name}</h1></button>
 
         <div className={`card hero lit${my > 0 ? ' lit-pos' : my < 0 ? ' lit-neg' : ''}`} style={{ marginTop: 16 }}>
           <div className="k">Il tuo saldo di guida</div>
