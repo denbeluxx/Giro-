@@ -184,12 +184,12 @@ with sync_playwright() as p:
     ok(sum(1 for t in g['trips'] if t['status'] == 'cancelled') == 1, 'il viaggio annullato resta nello storico')
 
     # --- Pedaggi e rimborso ---
-    tap(pg, '.row:has-text("Pedaggi")', 700); shot(pg, '20-pedaggi')
+    tap(pg, '.hchip:has-text("Pedaggi")', 700); shot(pg, '20-pedaggi')
     before = pg.locator('.list').first.inner_text()
     if pg.locator('.row:has-text("Tocca per registrare")').count():
         tap(pg, '.row:has-text("Tocca per registrare") >> nth=0', 500); shot(pg, '21-rimborso')
         tap(pg, '.sheet .btn:has-text("Registra rimborso")', 1000)
-        ok(pg.locator('.list').first.inner_text() != before and 'Rimborsi registrati' in pg.inner_text('.scroll'), 'rimborso registrato: saldi in euro aggiornati')
+        ok(pg.locator('.list').first.inner_text() != before and 'rimborsi registrati' in pg.inner_text('.scroll').lower(), 'rimborso registrato: saldi in euro aggiornati')
     tap(pg, '.nav-btn:has-text("Indietro")', 700)
 
     # --- Seconda sessione: stessi dati ---
@@ -220,8 +220,7 @@ with sync_playwright() as p:
     dur = pg.evaluate("getComputedStyle(document.querySelector('.sheet')).animationDuration")
     ok(dur in ('1e-05s', '0.00001s'), f'con «Riduci movimento» le animazioni sono disattivate ({dur})')
     tap(pg, '.sheet-h .nav-btn', 200); tap(pg, '.nav-btn:has-text("Indietro")', 300); tap(pg, '.nav .nav-btn', 300)
-    tap(pg, '.seg button:has-text("Chiaro")', 300)
-    ok(pg.evaluate("getComputedStyle(document.body).backgroundColor") == 'rgb(242, 242, 247)', 'scelta manuale del tema chiaro su dispositivo scuro')
+    ok(pg.evaluate("getComputedStyle(document.body).backgroundColor") == 'rgb(22, 23, 26)', 'tema antracite applicato anche su dispositivo scuro')
     c2.close()
 
     # --- Tastiera: viewport ridotto come con tastiera aperta ---

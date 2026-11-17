@@ -7,7 +7,7 @@ import { RouteError, estimateRoute, matrix, routeStops, type Found, type Route }
 import { store } from '../lib/store'
 import { haversine } from '../lib/tolls'
 import { uid, type GroupToll, type ID, type Leg, type Member, type Pt, type Stop, type Trip } from '../lib/types'
-import { Avatar, Btn, Icon, Notice, Seg, Sheet, Skel, Switch, useBusy, useToast } from '../ui/kit'
+import { Avatar, Btn, Icon, Notice, Seg, Sheet, Skel, Switch, useBusy, useToast, led, ledHex } from '../ui/kit'
 import { MapView } from '../ui/MapView'
 import { PlaceSearch } from '../ui/PlaceSearch'
 import { KmSheet, TollSheet, tollText } from './editors'
@@ -431,7 +431,7 @@ export function Plan({ mode, edit, redo, at, resume }: { mode: 'plan' | 'record'
           <div className="section" style={{ marginTop: 18 }}>
             <div className="section-h"><h2>{recording ? 'Chi c\'era' : redo ? 'Chi viene stavolta' : 'Chi viene'}</h2><span className="caption num">{present.length} di {chipPeople.length}</span></div>
             <div className="chips">{chipPeople.map((m) => (
-              <button key={m.id} className="chip" aria-pressed={present.includes(m.id)} onClick={() => togglePresent(m.id)}><Avatar m={m} size={34} />{m.name}</button>
+              <button key={m.id} className="chip" style={led(m)} aria-pressed={present.includes(m.id)} onClick={() => togglePresent(m.id)}><Avatar m={m} size={34} />{m.name}</button>
             ))}</div>
           </div>
           <div className="section"><div className="list">{whenRow}</div></div>
@@ -496,7 +496,7 @@ export function Plan({ mode, edit, redo, at, resume }: { mode: 'plan' | 'record'
             {presentPeople.map((m) => {
               const off = unavailable.includes(m.id)
               return (
-                <button key={m.id} role="radio" aria-checked={driver === m.id && !undecided} disabled={off} className={`driver${off ? ' off' : ''}`} onClick={() => { setDriver(m.id); setUndecided(false) }}>
+                <button key={m.id} role="radio" aria-checked={driver === m.id && !undecided} disabled={off} className={`driver${off ? ' off' : ''}`} style={led(m)} onClick={() => { setDriver(m.id); setUndecided(false) }}>
                   <Avatar m={m} size={44} />
                   <span style={{ flex: 1, minWidth: 0 }}>
                     <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}><span style={{ fontWeight: 600 }}>{m.name}</span>{suggestion?.id === m.id && <span className="pill accent">Suggerito</span>}</div>
@@ -537,7 +537,7 @@ export function Plan({ mode, edit, redo, at, resume }: { mode: 'plan' | 'record'
 
   return (
     <div className="screen">
-      <MapView geometry={leg?.geometry} padTop={70} padBottom={Math.min(visible, H * 0.55)}
+      <MapView color={leg?.driverId ? ledHex(byId(leg.driverId)) : undefined} geometry={leg?.geometry} padTop={70} padBottom={Math.min(visible, H * 0.55)}
         stops={(leg?.stops ?? []).map((s, i, a) => ({ ...s, label: String(i + 1), end: i === a.length - 1, title: s.name }))}
         dots={!leg?.stops.length && dest ? homes.map((m) => usableHome(m)!) : []} destDot={!leg?.stops.length ? dest : null} />
       {top}
@@ -665,13 +665,13 @@ export function Plan({ mode, edit, redo, at, resume }: { mode: 'plan' | 'record'
               <div className="chips">{pax(leg).map((p) => {
                 const b = boardIdx(leg, p), offAt = leg.stops.findIndex((s) => s.off.includes(p))
                 const impossible = i === leg.stops.length - 1 || (offAt >= 0 && offAt <= i && b !== i)
-                return <button key={p} className="chip" disabled={impossible} aria-pressed={cur.on.includes(p)} onClick={() => setStops(leg.kind, leg.stops.map((s, j) => (j === i ? { ...s, on: s.on.includes(p) ? s.on.filter((x) => x !== p) : [...s.on, p] } : { ...s, on: s.on.filter((x) => x !== p) })))}><Avatar m={byId(p)} size={34} />{byId(p)?.name}</button>
+                return <button key={p} className="chip" style={led(byId(p))} disabled={impossible} aria-pressed={cur.on.includes(p)} onClick={() => setStops(leg.kind, leg.stops.map((s, j) => (j === i ? { ...s, on: s.on.includes(p) ? s.on.filter((x) => x !== p) : [...s.on, p] } : { ...s, on: s.on.filter((x) => x !== p) })))}><Avatar m={byId(p)} size={34} />{byId(p)?.name}</button>
               })}</div>
               <p className="label" style={{ marginTop: 16 }}>Scende qui</p>
               <div className="chips">{pax(leg).map((p) => {
                 const b = boardIdx(leg, p)
                 const impossible = i === 0 || b < 0 || b >= i
-                return <button key={p} className="chip" disabled={impossible} aria-pressed={cur.off.includes(p)} onClick={() => setStops(leg.kind, leg.stops.map((s, j) => (j === i ? { ...s, off: s.off.includes(p) ? s.off.filter((x) => x !== p) : [...s.off, p] } : { ...s, off: s.off.filter((x) => x !== p) })))}><Avatar m={byId(p)} size={34} />{byId(p)?.name}</button>
+                return <button key={p} className="chip" style={led(byId(p))} disabled={impossible} aria-pressed={cur.off.includes(p)} onClick={() => setStops(leg.kind, leg.stops.map((s, j) => (j === i ? { ...s, off: s.off.includes(p) ? s.off.filter((x) => x !== p) : [...s.off, p] } : { ...s, off: s.off.filter((x) => x !== p) })))}><Avatar m={byId(p)} size={34} />{byId(p)?.name}</button>
               })}</div>
               <p className="foot">Si scende solo dopo essere saliti. Chi non sale in nessuna tappa non partecipa a questa tratta.</p>
             </>}
@@ -701,7 +701,7 @@ export function Plan({ mode, edit, redo, at, resume }: { mode: 'plan' | 'record'
           <div role="radiogroup">{presentPeople.map((m) => {
             const off = unavailable.includes(m.id)
             return (
-              <button key={m.id} role="radio" disabled={off} aria-checked={legs[1]?.driverId === m.id} className={`driver${off ? ' off' : ''}`} onClick={() => {
+              <button key={m.id} role="radio" disabled={off} aria-checked={legs[1]?.driverId === m.id} className={`driver${off ? ' off' : ''}`} style={led(m)} onClick={() => {
                 setLeg('ritorno', (l) => {
                   const stops = m.id === legs[0].driverId ? reverseStops(legs[0].stops) : withExtras('ritorno', buildStops('ritorno', data.members, present, m.id, dest!), extraStops(l.stops))
                   return { ...newLeg('ritorno', m.id, stops), designated: l.designated, time: l.time }
@@ -719,7 +719,7 @@ export function Plan({ mode, edit, redo, at, resume }: { mode: 'plan' | 'record'
       }} />}
       {sheet?.k === 'who' && (
         <Sheet title={recording ? 'Variazione dei saldi' : edit ? 'Partecipanti e saldi' : 'Anteprima dei saldi'} onClose={() => setSheet(null)}>
-          {edit && <><p className="label">Chi c'era</p><div className="chips" style={{ marginBottom: 18 }}>{chipPeople.map((m) => <button key={m.id} className="chip" aria-pressed={present.includes(m.id)} disabled={legs.some((l) => l.driverId === m.id)} onClick={() => {
+          {edit && <><p className="label">Chi c'era</p><div className="chips" style={{ marginBottom: 18 }}>{chipPeople.map((m) => <button key={m.id} className="chip" style={led(m)} aria-pressed={present.includes(m.id)} disabled={legs.some((l) => l.driverId === m.id)} onClick={() => {
             const on = present.includes(m.id), next = on ? present.filter((p) => p !== m.id) : [...present, m.id]
             setPresent(next)
             if (dest && driver) { setLegs(buildLegs({ dest, present: next, driver, start, hasReturn, prev: legs })); failed.current = {}; setAlts({}) }

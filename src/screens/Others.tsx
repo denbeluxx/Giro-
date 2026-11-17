@@ -1,5 +1,5 @@
 import { useState } from 'react'
-import { getTheme, setTheme, useApp, type Theme } from '../app'
+import { useApp } from '../app'
 import { displayRound, settleUp, tripEffect } from '../lib/calc'
 import { fmtDate, fmtDateYear, fmtEur, fmtEurSigned, fmtKm, fmtKmSigned, parseNum } from '../lib/format'
 import { inviteLink, whatsappUrl } from '../lib/share'
@@ -7,7 +7,7 @@ import { store } from '../lib/store'
 import { resetDemo, setDemoIdentity } from '../lib/store/local'
 import { gateName } from '../lib/tolls'
 import { uid, type ID, type Place, type Trip } from '../lib/types'
-import { Avatar, Btn, Empty, Icon, Seg, Sheet, Switch, useBusy, useToast } from '../ui/kit'
+import { Avatar, Btn, Empty, Icon, Seg, Sheet, Switch, useBusy, useToast, led } from '../ui/kit'
 import { PlaceSearch } from '../ui/PlaceSearch'
 
 export function Header({ title, right }: { title: string; right?: React.ReactNode }) {
@@ -144,9 +144,9 @@ export function Money() {
       </div>
       {pay && <Sheet title="Rimborso" onClose={() => setPay(null)} footer={<>{!pay.to && <p className="cta-hint">Scegli a chi va il rimborso.</p>}<Btn busy={busy} disabled={!pay.to || pay.from === pay.to || !amountOk} onClick={save}>Registra rimborso</Btn></>}>
         <p className="label">Chi paga</p>
-        <div className="chips">{people.map((m) => <button key={m.id} className="chip" aria-pressed={pay.from === m.id} onClick={() => setPay({ ...pay, from: m.id, to: pay.to === m.id ? null : pay.to })}><Avatar m={m} size={34} />{m.name}</button>)}</div>
+        <div className="chips">{people.map((m) => <button key={m.id} className="chip" style={led(m)} aria-pressed={pay.from === m.id} onClick={() => setPay({ ...pay, from: m.id, to: pay.to === m.id ? null : pay.to })}><Avatar m={m} size={34} />{m.name}</button>)}</div>
         <p className="label" style={{ marginTop: 18 }}>A chi</p>
-        <div className="chips">{people.filter((m) => m.id !== pay.from).map((m) => <button key={m.id} className="chip" aria-pressed={pay.to === m.id} onClick={() => setPay({ ...pay, to: m.id })}><Avatar m={m} size={34} />{m.name}</button>)}</div>
+        <div className="chips">{people.filter((m) => m.id !== pay.from).map((m) => <button key={m.id} className="chip" style={led(m)} aria-pressed={pay.to === m.id} onClick={() => setPay({ ...pay, to: m.id })}><Avatar m={m} size={34} />{m.name}</button>)}</div>
         <label className="label" htmlFor="am" style={{ display: 'block', marginTop: 18 }}>Importo in euro</label>
         <input id="am" className="field num" inputMode="decimal" placeholder="0,00" value={pay.amount} aria-invalid={pay.amount !== '' && !amountOk} onChange={(e) => setPay({ ...pay, amount: e.target.value })} style={{ fontSize: 22 }} />
         {pay.amount !== '' && !amountOk && <p className="foot" style={{ color: 'var(--danger)' }}>Scrivi un importo di almeno 0,01 €, ad esempio 2,20.</p>}
@@ -160,7 +160,6 @@ export function Money() {
 export function Members() {
   const { data, me, active, bal, reload, groups, switchGroup, signOut } = useApp()
   const toast = useToast()
-  const [theme, setT] = useState<Theme>(getTheme())
   const [sheet, setSheet] = useState<null | 'add' | 'home' | 'homeOff' | 'leave' | 'name' | 'invite' | 'member' | 'memberOff'>(null)
   const [editing, setEditing] = useState<ID | null>(null)
   const [name, setName] = useState('')
@@ -207,13 +206,9 @@ export function Members() {
           </div>
         </div>
 
-        <div className="section"><div className="section-h"><h2>Aspetto</h2></div>
-          <Seg value={theme} onChange={(t) => { setT(t); setTheme(t) }} options={[{ v: 'auto', l: 'Automatico' }, { v: 'light', l: 'Chiaro' }, { v: 'dark', l: 'Scuro' }]} />
-        </div>
-
         {store.mode === 'demo' && <div className="section"><div className="section-h"><h2>Modalità dimostrativa</h2></div>
           <p className="caption" style={{ margin: '0 6px 10px' }}>Entra come un altro membro per vedere gli stessi dati dal suo punto di vista. I dati restano su questo dispositivo.</p>
-          <div className="chips">{active.map((m) => <button key={m.id} className="chip" aria-pressed={m.id === me.id} onClick={() => { setDemoIdentity(data.group.id, m.id); reload() }}><Avatar m={m} size={34} />{m.name}</button>)}</div>
+          <div className="chips">{active.map((m) => <button key={m.id} className="chip" style={led(m)} aria-pressed={m.id === me.id} onClick={() => { setDemoIdentity(data.group.id, m.id); reload() }}><Avatar m={m} size={34} />{m.name}</button>)}</div>
           <div style={{ height: 12 }} /><Btn kind="gray" onClick={() => { resetDemo(); reload(); toast('Dati dimostrativi ripristinati') }}>Ripristina i dati dimostrativi</Btn></div>}
 
         <div className="section"><div className="list">

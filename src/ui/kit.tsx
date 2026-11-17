@@ -35,12 +35,17 @@ export function Icon({ n, size = 22, sw = 1.9 }: { n: keyof typeof P | string; s
   return <svg width={size} height={size} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={sw} strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">{P[n]}</svg>
 }
 
-// colori degli avatar: su quelli chiari le iniziali sono scure per restare leggibili
-const COLORS: [string, string, string][] = [['#7d7aff', '#5856d6', '#fff'], ['#ffb340', '#ff9500', '#3a2000'], ['#5ac8fa', '#0a84ff', '#fff'], ['#ff6f91', '#ff2d55', '#fff'], ['#63e6be', '#12b886', '#003d2b'], ['#ffd43b', '#f59f00', '#3a2a00'], ['#da77f2', '#ae3ec9', '#fff'], ['#a9b1bd', '#6b7280', '#fff']]
+// colore del LED di ogni persona: niente verde, rosso o arancio, che restano per saldi e conferme
+const LEDS = ['#38e1ff', '#dfe7ff', '#ff5ad1', '#5b7cff', '#a78bff', '#ff9de6', '#8ec5ff', '#b8bec8']
+export const ledHex = (m?: Pick<Member, 'color'> | null) => LEDS[(m?.color ?? 7) % LEDS.length]
+/** Variabili CSS del LED di una persona, da mettere sull'elemento che si illumina. */
+export function led(m?: Pick<Member, 'color'> | null): CSSProperties {
+  const h = ledHex(m), n = parseInt(h.slice(1), 16)
+  return { '--lc': `${(n >> 16) & 255} ${(n >> 8) & 255} ${n & 255}`, '--lh': h } as CSSProperties
+}
 export function Avatar({ m, size = 36 }: { m?: Pick<Member, 'name' | 'color'> | null; size?: number }) {
-  const c = COLORS[(m?.color ?? 7) % COLORS.length]
   const initials = (m?.name ?? '?').trim().split(/\s+/).map((w) => w[0]).slice(0, 2).join('').toUpperCase()
-  return <span className="avatar" aria-hidden="true" style={{ width: size, height: size, fontSize: size * 0.4, color: c[2], '--a1': c[0], '--a2': c[1] } as CSSProperties}>{initials}</span>
+  return <span className="avatar" aria-hidden="true" style={{ ...led(m), width: size, height: size, fontSize: size * 0.4 }}>{initials}</span>
 }
 
 export function Btn({ kind = 'primary', busy, small, icon, children, ...p }: { kind?: 'primary' | 'tinted' | 'gray' | 'danger'; busy?: boolean; small?: boolean; icon?: string; children: ReactNode } & React.ButtonHTMLAttributes<HTMLButtonElement>) {

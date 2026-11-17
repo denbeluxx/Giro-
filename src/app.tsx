@@ -40,17 +40,6 @@ export function transition(dir: 'push' | 'pop' | 'fade', fn: () => void) {
   d.startViewTransition(() => flushSync(fn))
 }
 
-export type Theme = 'auto' | 'light' | 'dark'
-export function getTheme(): Theme { try { return (localStorage.getItem('giro-theme') as Theme) || 'auto' } catch { return 'auto' } }
-export function setTheme(t: Theme) {
-  try { localStorage.setItem('giro-theme', t) } catch { /* */ }
-  if (t === 'auto') delete document.documentElement.dataset.theme; else document.documentElement.dataset.theme = t
-  // colore della barra di stato coerente con il tema scelto
-  const dark = t === 'dark' || (t === 'auto' && matchMedia('(prefers-color-scheme: dark)').matches)
-  document.querySelectorAll('meta[name="theme-color"]').forEach((m) => { m.setAttribute('content', dark ? '#000000' : '#f2f2f7'); m.removeAttribute('media') })
-  window.dispatchEvent(new Event('giro-theme'))
-}
-
 const params = new URLSearchParams(window.location.search)
 /** Uscita volontaria in corso: non va confusa con una sessione scaduta. */
 export const signingOut = { current: false }
@@ -68,7 +57,6 @@ export function App() {
   const [expired, setExpired] = useState(false)
   const had = useRef(false)
   useEffect(() => {
-    setTheme(getTheme())
     store.session().then((s) => { had.current = !!s; setSession(s) }).catch(() => setSession(null))
     return store.onAuth((s) => {
       // la sessione è sparita senza che l'utente sia uscito: è scaduta o revocata
@@ -236,7 +224,7 @@ function Auth({ invite, expired }: { invite: boolean; expired?: boolean }) {
   const [busy, run] = useBusy()
   return (
     <div className="screen"><div className="scroll" style={{ paddingTop: 'calc(var(--sat) + 72px)' }}>
-      <div className="avatar" style={{ width: 64, height: 64, borderRadius: 18, background: 'linear-gradient(140deg, var(--accent), #8e5cf0)', marginBottom: 20 }}><Icon n="car" size={34} /></div>
+      <div className="avatar" style={{ width: 64, height: 64, borderRadius: 18, background: 'var(--satin) padding-box, var(--chrome-hi) border-box', boxShadow: '0 0 22px rgba(255, 255, 255, 0.14)', marginBottom: 20 }}><Icon n="car" size={34} /></div>
       <h1 className="title">Giro</h1>
       {expired && <div style={{ marginBottom: 16 }}><Notice kind="info">Sessione scaduta: accedi di nuovo. Le uscite in preparazione sono ancora salvate su questo telefono.</Notice></div>}
       <p className="subtitle" style={{ fontSize: 17, marginBottom: 28 }}>{invite ? 'Accedi per entrare nel gruppo che ti ha invitato.' : 'Chi guida stasera? Chilometri, turni e pedaggi tra amici.'}</p>

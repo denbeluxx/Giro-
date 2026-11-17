@@ -3,7 +3,7 @@ import { legMeters, legToll, tripEffect, type LegToll } from '../lib/calc'
 import { fmtEur, fmtKm, kmField, parseNum } from '../lib/format'
 import { A4_GATES, a4Toll, gateName, pairKey } from '../lib/tolls'
 import type { GroupToll, ID, Leg, Member, Trip } from '../lib/types'
-import { Avatar, Btn, Notice, Sheet, Switch } from '../ui/kit'
+import { Avatar, Btn, Notice, Sheet, Switch, led } from '../ui/kit'
 
 const LEG = { andata: 'Andata', ritorno: 'Ritorno' } as const
 const MAX_KM = 2000
@@ -123,7 +123,7 @@ export function TollSheet({ trip, people, groupTolls, meId, onSave, onClose }: {
             {s.mirror && <p className="foot">Stessi caselli: proposto lo stesso importo dell'altra tratta.</p>}
             {s.touched && s.amount === '' && s.t.status !== 'none' && <p className="foot">Lasciato vuoto, il pedaggio resta da verificare{s.from && s.to ? ' per i caselli scelti' : ''}. Scrivi 0 se non c'era.</p>}
             <p className="label" style={{ marginTop: 14 }}>Ha pagato</p>
-            <div className="chips">{people.map((m) => <button key={m.id} className="chip" aria-pressed={s.payer === m.id} onClick={() => set(i, { payer: m.id })}><Avatar m={m} size={34} />{m.name}</button>)}</div>
+            <div className="chips">{people.map((m) => <button key={m.id} className="chip" style={led(m)} aria-pressed={s.payer === m.id} onClick={() => set(i, { payer: m.id })}><Avatar m={m} size={34} />{m.name}</button>)}</div>
           </div>
         )
       })}

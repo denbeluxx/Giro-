@@ -5,7 +5,7 @@ import { fmtDate, fmtEur, fmtKm, fmtKmSigned, fmtTime, kmNum, roundKm } from '..
 import { SIM } from '../lib/routing'
 import { store } from '../lib/store'
 import type { Trip } from '../lib/types'
-import { Avatar, Btn, Count, Icon, Sheet } from '../ui/kit'
+import { Avatar, Btn, Count, Icon, Sheet, led } from '../ui/kit'
 import { clearDraft, loadDraft } from './Plan'
 
 export const tone = (v: number) => (roundKm(v) > 0 ? 'pos' : roundKm(v) < 0 ? 'neg' : 'dim')
@@ -30,16 +30,21 @@ export function Home() {
   const banner = (t: Trip, hot: boolean) => {
     const d = byId(t.legs[0]?.driverId)
     return (
-      <button key={t.id} className={`banner${hot ? ' hot' : ''}`} onClick={() => push({ s: 'trip', id: t.id })} style={{ marginTop: 12 }}>
+      <button key={t.id} className={`banner lit${hot ? ' hot' : ''}`} onClick={() => push({ s: 'trip', id: t.id })} style={{ marginTop: 12, ...(hot ? {} : led(d)) }}>
         <span className="ic"><Icon n={hot ? 'check' : 'clock'} size={24} /></span>
         <span className="grow" style={{ flex: 1, minWidth: 0 }}>
-          <div style={{ fontWeight: 600 }}>{hot ? 'Conferma il viaggio' : 'Prossima uscita'}</div>
-          <div className="s">{t.dest.name} · {fmtDate(t.startsAt)} {fmtTime(t.startsAt)} · {d ? `guida ${d.name}` : 'conducente da decidere'}</div>
+          <div className="mono-k">{hot ? 'Conferma il viaggio' : 'Prossima uscita'}</div>
+          <div className="bt">{t.dest.name}</div>
+          <div className="s">{fmtDate(t.startsAt)} {fmtTime(t.startsAt)} · {d ? `${hot ? 'guidava' : 'guida'} ${d.name}` : 'conducente da decidere'}</div>
         </span>
         <Icon n="chev" size={18} />
       </button>
     )
   }
+  // posizione del proprio saldo rispetto al gruppo, per il cursore luminoso
+  const maxAbs = Math.max(0.1, ...ranked.map((m) => Math.abs(shown[m.id] ?? 0)))
+  const knob = 50 + Math.max(-1, Math.min(1, my / maxAbs)) * 50
+  const last = bal.lastDrove[me.id]
 
   return (
     <div className="screen">
@@ -53,10 +58,16 @@ export function Home() {
       <div className="scroll has-cta">
         <button onClick={() => push({ s: 'members' })} style={{ display: 'block' }}><h1 className="title">{data.group.name}</h1></button>
 
-        <div className="card hero" style={{ marginTop: 16 }}>
-          <div className="k">Il tuo saldo di guida</div>
-          <div className={`big ${tone(my)}`}><Count id={`km-${me.id}`} value={my} format={(v) => { const x = roundKm(v); return `${x > 0 ? '+' : x < 0 ? '−' : ''}${kmNum(x)}` }} /><small>km</small></div>
-          <p className="caption" style={{ fontSize: 15 }}>{meaning}</p>
+        <div className={`card hero lit${my > 0 ? ' lit-pos' : my < 0 ? ' lit-neg' : ''}`} style={{ marginTop: 16 }}>
+          <div className="hero-top"><div className="k">Il tuo saldo di guida</div><i className="led" aria-hidden="true" /></div>
+          <div className="big"><span className="chrome-t num"><Count id={`km-${me.id}`} value={my} format={(v) => { const x = roundKm(v); return `${x > 0 ? '+' : x < 0 ? '−' : ''}${kmNum(x)}` }} /></span><small>km</small></div>
+          <div className="meter" aria-hidden="true"><i className="track" /><i className="zero" /><i className="seg" style={{ left: `${Math.min(knob, 50)}%`, width: `${Math.abs(knob - 50)}%` }} /><i className="knob" style={{ left: `${knob}%` }} /></div>
+          <div className="meter-l" aria-hidden="true"><span>Sotto quota</span><span>0</span><span>Sopra quota</span></div>
+          <p className="caption">{meaning}</p>
+          <div className="hero-chips">
+            <button className="hchip" onClick={() => push({ s: 'money' })}><span className="k">Pedaggi<Icon n="chev" size={14} /></span><span className="v">{myEur > 0 ? 'Ti devono ' : myEur < 0 ? 'Devi ' : 'In pari'}{myEur !== 0 && <b className={`num ${myEur > 0 ? 'pos' : 'neg'}`}>{fmtEur(myEur)}</b>}</span></button>
+            <div className="hchip"><span className="k">Ultima guida</span><span className="v">{last ? fmtDate(last) : 'Mai'}</span></div>
+          </div>
         </div>
 
         {draft && <div className="banner draft" style={{ marginTop: 12 }}>
@@ -72,28 +83,21 @@ export function Home() {
         {next && banner(next, false)}
 
         <div className="section">
-          <div className="section-h"><h2>Saldi di guida</h2><button className="link" onClick={() => push({ s: 'members' })}>Membri</button></div>
+          <div className="section-h"><h2>Saldi di guida · km</h2><button className="link" onClick={() => push({ s: 'members' })}>Membri</button></div>
           <div className="list">
             {ranked.map((m) => (
               <div className="row" key={m.id}>
                 <Avatar m={m} />
                 <div className="grow"><div className="t">{m.name}{m.id === me.id && <span className="dim"> · tu</span>}</div>
                   <div className="s">{m.leftAt ? 'Ha lasciato il gruppo' : bal.lastDrove[m.id] ? `Ultima guida ${fmtDate(bal.lastDrove[m.id]!)}` : 'Non ha ancora guidato'}</div></div>
-                <div className={`v strong ${tone(shown[m.id] ?? 0)}`}><Count id={`km-row-${m.id}`} value={shown[m.id] ?? 0} format={fmtKmSigned} /></div>
+                <div className="vcol">
+                  <div className={`v strong ${tone(shown[m.id] ?? 0)}`}><Count id={`km-row-${m.id}`} value={shown[m.id] ?? 0} format={fmtKmSigned} /></div>
+                  <span className="mini" aria-hidden="true">{(shown[m.id] ?? 0) !== 0 && <i className={(shown[m.id] ?? 0) > 0 ? 'p' : 'n'} style={{ width: `${Math.min(50, Math.abs(shown[m.id] ?? 0) / maxAbs * 50)}%` }} />}</span>
+                </div>
               </div>
             ))}
           </div>
           <p className="foot">Positivo: ha guidato più della sua quota. Negativo: ha usato più passaggi. La somma del gruppo è sempre zero.</p>
-        </div>
-
-        <div className="section">
-          <button className="list" style={{ width: '100%' }} onClick={() => push({ s: 'money' })}>
-            <span className="row">
-              <span className="avatar ic-tile"><Icon n="euro" size={20} /></span>
-              <span className="grow"><div className="t">Pedaggi</div><div className="s">{myEur > 0 ? 'Ti devono' : myEur < 0 ? 'Devi' : 'Sei in pari'}{myEur !== 0 && <b className={`num ${myEur > 0 ? 'pos' : 'neg'}`}> {fmtEur(myEur)}</b>}</div></span>
-              <span className="chev"><Icon n="chev" size={18} /></span>
-            </span>
-          </button>
         </div>
 
         <div className="section tiles">

@@ -6,7 +6,7 @@ import { shareText, whatsappUrl } from '../lib/share'
 import { store } from '../lib/store'
 import { gateName, refreshTolls } from '../lib/tolls'
 import type { GroupToll, ID, Leg, Member, Trip } from '../lib/types'
-import { Avatar, Btn, Empty, Icon, Notice, Sheet, useBusy, useToast } from '../ui/kit'
+import { Avatar, Btn, Empty, Icon, Notice, Sheet, useBusy, useToast, ledHex } from '../ui/kit'
 import { MapView } from '../ui/MapView'
 import { KmSheet, TollSheet } from './editors'
 import { tone } from './Home'
@@ -133,7 +133,7 @@ export function TripView({ id, fresh }: { id: ID; fresh?: boolean }) {
         <p className="subtitle">{fmtDateLong(trip.startsAt).replace(/^./, (c) => c.toUpperCase())} · {fmtTime(trip.startsAt)}{trip.legs[1]?.time ? ` · ritorno ${trip.legs[1].time}` : ''}</p>
 
         <div className="map-static card" style={{ marginTop: 16 }}>
-          <MapView interactive={false} geometry={leg?.geometry} stops={(leg?.stops ?? []).map((s, i, a) => ({ ...s, label: String(i + 1), end: i === a.length - 1, title: s.name }))} destDot={leg?.stops.length ? null : trip.dest} padBottom={8} padTop={56} />
+          <MapView interactive={false} color={leg?.driverId ? ledHex(byId(leg.driverId)) : undefined} geometry={leg?.geometry} stops={(leg?.stops ?? []).map((s, i, a) => ({ ...s, label: String(i + 1), end: i === a.length - 1, title: s.name }))} destDot={leg?.stops.length ? null : trip.dest} padBottom={8} padTop={56} />
           {trip.legs.length > 1 && <div className="seg glass map-seg" role="group">{trip.legs.map((l, i) => <button key={l.kind} aria-pressed={tab === i} onClick={() => setTab(i)}>{l.kind === 'andata' ? 'Andata' : 'Ritorno'}</button>)}</div>}
         </div>
 
@@ -186,7 +186,7 @@ export function TripView({ id, fresh }: { id: ID; fresh?: boolean }) {
             : noStops ? <Btn onClick={() => editAt(2)}>Imposta la partenza</Btn>
             : !past ? <><p className="cta-hint">Potrete confermare il viaggio dopo la partenza.</p><Btn icon="wa" onClick={() => setSheet('share')}>Condividi il piano</Btn></>
             : missingRoute ? <Btn onClick={() => setSheet('km')}>Inserisci i km</Btn>
-            : <>{unpriced && <p className="cta-hint warn">Pedaggio senza importo: non sarà conteggiato finché non lo inserisci.</p>}<Btn busy={busy} icon="check" onClick={confirm}>Conferma viaggio</Btn></>}
+            : <>{unpriced && <p className="cta-hint warn">Pedaggio senza importo: non sarà conteggiato finché non lo inserisci.</p>}<Btn busy={busy} icon="check" className="led-warn" onClick={confirm}>Conferma viaggio</Btn></>}
         </div>
       )}
 
