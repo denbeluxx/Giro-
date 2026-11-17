@@ -5,7 +5,7 @@ import { uid, type Group, type GroupData, type ID, type Leg, type Member, type P
 import { sanitizeTrips } from '../validate'
 import { ConflictError, type Store } from './types'
 
-const KEY = 'giro-demo-v2'
+const KEY = 'giro-demo-v3'
 interface G { group: Group; members: Member[]; places: Place[]; trips: Trip[]; settlements: GroupData['settlements'] }
 interface DB { groups: Record<ID, G> }
 
@@ -38,13 +38,13 @@ function seed(): DB {
   const gid = 'demo-group'
   const day = (n: number, h = 21, m = 30) => { const d = new Date(); d.setDate(d.getDate() + n); d.setHours(h, m, 0, 0); return d.toISOString() }
   const mk = (id: string, name: string, color: number, lat: number, lng: number, label: string, joined: number): Member =>
-    ({ id, groupId: gid, userId: id === 'm-andrea' ? 'demo-user' : `u-${id}`, name, color, home: { lat, lng, label }, homeShared: true, joinedAt: day(joined), leftAt: null })
+    ({ id, groupId: gid, userId: id === 'm-daniele' ? 'demo-user' : `u-${id}`, name, color, home: { lat, lng, label }, homeShared: true, joinedAt: day(joined), leftAt: null })
   const members = [
-    mk('m-andrea', 'Andrea', 0, 45.6862, 9.7255, 'Via Dante 8, Seriate', -200),
-    mk('m-luca', 'Luca', 1, 45.6953, 9.6701, 'Via Paleocapa 3, Bergamo', -199),
-    mk('m-marco', 'Marco', 2, 45.6498, 9.6052, 'Via Verdi 21, Dalmine', -198),
-    mk('m-giulia', 'Giulia', 3, 45.7312, 9.7281, 'Via Roma 5, Alzano Lombardo', -197),
-    mk('m-sara', 'Sara', 4, 45.6588, 9.6517, 'Via Galilei 2, Stezzano', -40),
+    mk('m-daniele', 'Daniele', 0, 45.6862, 9.7255, 'Via Dante 8, Seriate', -200),
+    mk('m-matteo', 'Matteo', 1, 45.6953, 9.6701, 'Via Paleocapa 3, Bergamo', -199),
+    mk('m-filippo', 'Filippo', 2, 45.6498, 9.6052, 'Via Verdi 21, Dalmine', -198),
+    mk('m-alessia', 'Alessia', 3, 45.7312, 9.7281, 'Via Roma 5, Alzano Lombardo', -197),
+    mk('m-andrea', 'Andrea', 4, 45.6588, 9.6517, 'Via Galilei 2, Stezzano', -40),
   ]
   const places: Place[] = [
     { id: 'p-bolgia', name: 'Bolgia', address: 'Via Vaccarezza, Osio Sopra', lat: 45.6255, lng: 9.5905, kind: 'locale' },
@@ -52,7 +52,7 @@ function seed(): DB {
     { id: 'p-navigli', name: 'Navigli', address: 'Ripa di Porta Ticinese, Milano', lat: 45.4523, lng: 9.1746, kind: 'locale' },
     { id: 'p-malp', name: 'Parcheggio Malpensata', address: 'Via Carnovali, Bergamo', lat: 45.6853, lng: 9.6726, kind: 'ritrovo' },
   ]
-  const tolls = { [pairKey('seriate', 'milano-est')]: { cents: 440, by: 'm-andrea', on: day(-30) }, [pairKey('bergamo', 'milano-est')]: { cents: 380, by: 'm-luca', on: day(-30) } }
+  const tolls = { [pairKey('seriate', 'milano-est')]: { cents: 440, by: 'm-daniele', on: day(-30) }, [pairKey('bergamo', 'milano-est')]: { cents: 380, by: 'm-matteo', on: day(-30) } }
   const trip = (id: string, when: string, status: Trip['status'], driver: ID, present: ID[], place: Place, designated = false): Trip => {
     const go = newLeg('andata', driver, buildStops('andata', members, present, driver, place))
     const back = newLeg('ritorno', driver, reverseStops(go.stops))
@@ -60,10 +60,10 @@ function seed(): DB {
     return { id, groupId: gid, status, version: 1, startsAt: when, dest: { name: place.name, lat: place.lat, lng: place.lng, address: place.address }, presentIds: present, unavailableIds: [], legs, createdBy: driver, updatedBy: driver, updatedAt: when, confirmedAt: status === 'confirmed' ? when : null }
   }
   const trips = [
-    trip('t-1', day(-23), 'confirmed', 'm-andrea', ['m-andrea', 'm-luca', 'm-marco'], places[0]),
-    trip('t-2', day(-16), 'confirmed', 'm-luca', ['m-andrea', 'm-luca', 'm-giulia', 'm-sara'], places[2]),
-    trip('t-3', day(-9), 'confirmed', 'm-giulia', ['m-andrea', 'm-giulia', 'm-marco'], places[1], true),
-    trip('t-4', day(-1), 'planned', 'm-marco', ['m-andrea', 'm-luca', 'm-marco', 'm-sara'], places[0]),
+    trip('t-1', day(-23), 'confirmed', 'm-daniele', ['m-daniele', 'm-matteo', 'm-filippo'], places[0]),
+    trip('t-2', day(-16), 'confirmed', 'm-matteo', ['m-daniele', 'm-matteo', 'm-alessia', 'm-andrea'], places[2]),
+    trip('t-3', day(-9), 'confirmed', 'm-alessia', ['m-daniele', 'm-alessia', 'm-filippo'], places[1], true),
+    trip('t-4', day(-1), 'planned', 'm-filippo', ['m-daniele', 'm-matteo', 'm-filippo', 'm-andrea'], places[0]),
   ]
   return { groups: { [gid]: { group: { id: gid, name: 'Sabato sera', inviteCode: 'demo1234', settings: { tolls } }, members, places, trips, settlements: [] } } }
 }

@@ -24,7 +24,7 @@ def hero(pg):
 
 def shot(pg, name): pg.screenshot(path=f'{OUT}/{name}.png')
 def tap(pg, sel, wait=450): pg.click(sel); pg.wait_for_timeout(wait)
-def db(pg): return json.loads(pg.evaluate("localStorage.getItem('giro-demo-v2')"))['groups']['demo-group']
+def db(pg): return json.loads(pg.evaluate("localStorage.getItem('giro-demo-v3')"))['groups']['demo-group']
 
 def new_ctx(b, **kw):
     return b.new_context(viewport={'width': 390, 'height': 844}, device_scale_factor=2, is_mobile=True, has_touch=True, locale='it-IT', timezone_id='Europe/Rome', **kw)
@@ -38,7 +38,7 @@ def leave_flow(pg):
 def plan_to(pg, place, driver=None, search=None, mode='Organizza uscita', only=None):
     tap(pg, f'text={mode}', 600)
     if only is not None:
-        for name in ['Andrea', 'Luca', 'Marco', 'Giulia', 'Sara']:
+        for name in ['Daniele', 'Matteo', 'Filippo', 'Alessia', 'Andrea']:
             if name not in only: tap(pg, f'.chip:has-text("{name}")', 120)
     if search:
         pg.fill('.search input', search); pg.wait_for_selector(f'.list .row:has-text("{place}")')
@@ -63,9 +63,9 @@ with sync_playwright() as p:
     ok(pg.locator('[role=radio][aria-checked=true]').count() == 0, 'inizialmente nessun conducente è selezionato')
     ok(pg.locator('.cta .btn').is_disabled(), 'non si prosegue senza una scelta esplicita')
     shot(pg, '03-chi-guida')
-    tap(pg, '[role=radio]:has-text("Giulia")', 350)
+    tap(pg, '[role=radio]:has-text("Alessia")', 350)
     ok(pg.locator('[role=radio][aria-checked=true]').count() == 1 and pg.locator('.cta .btn').is_enabled(), 'un altro conducente si sceglie con un solo tocco, senza conferme')
-    ok('Con Andrea' in pg.inner_text('.notice') and 'Con Giulia' in pg.inner_text('.notice'), 'confronto del giro tra suggerito e scelto')
+    ok('Con Daniele' in pg.inner_text('.notice') and 'Con Alessia' in pg.inner_text('.notice'), 'confronto del giro tra suggerito e scelto')
     shot(pg, '04-chi-guida-scelto')
     tap(pg, 'button:has-text("Continua")', 1600)
     pg.wait_for_selector('.stats b')
@@ -86,7 +86,7 @@ with sync_playwright() as p:
     tap(pg, 'button:has-text("Salva uscita")', 1200)
     pg.wait_for_selector('.sheet:has-text("Condividi il piano")')
     txt = pg.inner_text('.sheet .list')
-    ok('Bolgia' in txt and 'Guida: Giulia' in txt and 'Casa di' in txt and '?t=' in txt and 'Ritorno' in txt, 'riepilogo WhatsApp con destinazione, conducente, tappe per nome, ritorno e link')
+    ok('Bolgia' in txt and 'Guida: Alessia' in txt and 'Casa di' in txt and '?t=' in txt and 'Ritorno' in txt, 'riepilogo WhatsApp con destinazione, conducente, tappe per nome, ritorno e link')
     ok(pg.locator('.sheet a[href^="https://wa.me/?text="]').count() == 1, 'la condivisione parte da un tocco dell\'utente')
     shot(pg, '09-condividi')
     tap(pg, '.sheet-h .nav-btn', 400)
@@ -118,7 +118,7 @@ with sync_playwright() as p:
     shot(pg, '13-home-dopo-conferma')
 
     # --- A4 coperta: pedaggio compilato da solo ---
-    plan_to(pg, 'Navigli', driver='Luca', only=['Andrea', 'Luca'])
+    plan_to(pg, 'Navigli', driver='Matteo', only=['Daniele', 'Matteo'])
     tap(pg, 'button:has-text("Continua")', 1600); pg.wait_for_selector('.stats b')
     ok('Pedaggio 4,40 €' in norm(pg.inner_text('.stats')), 'tratta A4 coperta: importo compilato senza digitare nulla')
     shot(pg, '14-pedaggio-a4')
@@ -129,14 +129,14 @@ with sync_playwright() as p:
     leave_flow(pg)
 
     # --- A35: fuori copertura ---
-    plan_to(pg, 'Treviglio', driver='Marco', search='trevi')
+    plan_to(pg, 'Treviglio', driver='Filippo', search='trevi')
     tap(pg, 'button:has-text("Continua")', 1600); pg.wait_for_selector('.stats b')
     ok('fuori copertura' in pg.inner_text('.stats').lower() and 'A35' in pg.inner_text('.panel-body'), 'A35 indicata come fuori copertura')
     shot(pg, '16-a35-fuori-copertura')
     leave_flow(pg)
 
     # --- Registrazione diretta con flag: 2 + 2 km => ×3 ---
-    plan_to(pg, 'Setai', driver='Andrea', mode='Registra un viaggio già fatto', only=['Andrea', 'Sara'])
+    plan_to(pg, 'Setai', driver='Daniele', mode='Registra un viaggio già fatto', only=['Daniele', 'Andrea'])
     tap(pg, 'button:has-text("Continua")', 1600); pg.wait_for_selector('.stats b')
     tap(pg, '.grab', 500)
     tap(pg, 'button:has-text("Correggi i chilometri")', 500)
@@ -155,7 +155,7 @@ with sync_playwright() as p:
     tap(pg, 'button:has-text("Registra viaggio")', 900); pg.wait_for_selector('.done'); pg.wait_for_timeout(900)
     d2 = num(pg.inner_text('.done .card .num'))
     rec = [t for t in db(pg)['trips'] if t['status'] == 'confirmed' and t['dest']['name'].startswith('Setai') and len(t['presentIds']) == 2][-1]
-    def share(t, km_leg, mult):  # quota attesa: Sara è a bordo solo tra casa sua e il locale
+    def share(t, km_leg, mult):  # quota attesa: Andrea è a bordo solo tra casa sua e il locale
         tot = 0
         for leg in t['legs']:
             ms = [x['meters'] for x in leg['segs']]; w = ms[1] if leg['kind'] == 'andata' else ms[0]
@@ -170,7 +170,7 @@ with sync_playwright() as p:
     # --- Storico, modifica, annullamento ---
     tap(pg, '.tile:has-text("Storico")', 700); shot(pg, '18-storico')
     tap(pg, '.row:has-text("Setai"):has-text("Confermato") >> nth=0', 800); shot(pg, '19-dettaglio-viaggio')
-    ok('Ultima modifica: Andrea' in pg.inner_text('.scroll'), 'il dettaglio mostra chi ha fatto l\'ultima modifica')
+    ok('Ultima modifica: Daniele' in pg.inner_text('.scroll'), 'il dettaglio mostra chi ha fatto l\'ultima modifica')
     tap(pg, '.row:has-text("Km effettivi")', 500)
     pg.fill('#km-0', '3'); pg.fill('#km-1', '3'); tap(pg, '.sheet .btn:has-text("Fatto")', 900)
     tap(pg, '.nav-btn:has-text("Indietro")', 600); tap(pg, '.nav-btn:has-text("Indietro")', 700)
@@ -194,12 +194,12 @@ with sync_playwright() as p:
 
     # --- Seconda sessione: stessi dati ---
     pg2 = c.new_page(); pg2.goto(SIM); pg2.wait_for_selector('.hero .big')
-    tap(pg2, '.nav .nav-btn', 700); pg2.locator('.chip:has-text("Luca")').last.scroll_into_view_if_needed(); tap(pg2, '.section:has-text("Modalità dimostrativa") .chip:has-text("Luca")', 700)
+    tap(pg2, '.nav .nav-btn', 700); pg2.locator('.chip:has-text("Matteo")').last.scroll_into_view_if_needed(); tap(pg2, '.section:has-text("Modalità dimostrativa") .chip:has-text("Matteo")', 700)
     tap(pg2, '.nav-btn:has-text("Indietro")', 700)
     rows1 = pg.locator('.section .list').first.inner_text(); rows2 = pg2.locator('.section .list').first.inner_text()
-    ok(rows1.replace(' · tu', '') == rows2.replace(' · tu', ''), 'due sessioni (Andrea e Luca) vedono gli stessi saldi')
+    ok(rows1.replace(' · tu', '') == rows2.replace(' · tu', ''), 'due sessioni (Daniele e Matteo) vedono gli stessi saldi')
     tap(pg2, '.row:has-text("Registra un viaggio")', 500); tap(pg2, '.row:has-text("Setai")', 400); tap(pg2, 'button:has-text("Continua")', 800)
-    tap(pg2, '[role=radio]:has-text("Luca")', 300); tap(pg2, 'button:has-text("Continua")', 1600); tap(pg2, 'button:has-text("Registra viaggio")', 1400)
+    tap(pg2, '[role=radio]:has-text("Matteo")', 300); tap(pg2, 'button:has-text("Continua")', 1600); tap(pg2, 'button:has-text("Registra viaggio")', 1400)
     pg.wait_for_timeout(900)
     ok(pg.locator('.section .list').first.inner_text() != rows1, 'un viaggio registrato in una sessione compare subito nell\'altra')
     pg2.close()
@@ -213,7 +213,7 @@ with sync_playwright() as p:
     # --- Tema scuro e movimento ridotto ---
     c2 = new_ctx(b, color_scheme='dark', reduced_motion='reduce'); pg = c2.new_page(); pg.goto(SIM)
     hero(pg); shot(pg, '24-home-scuro')
-    plan_to(pg, 'Bolgia', driver='Marco'); shot(pg, '25-chi-guida-scuro')
+    plan_to(pg, 'Bolgia', driver='Filippo'); shot(pg, '25-chi-guida-scuro')
     tap(pg, 'button:has-text("Continua")', 1400); pg.wait_for_selector('.stats b'); shot(pg, '26-percorso-scuro')
     tap(pg, 'button:has-text("Salva uscita")', 900)
     ok(pg.locator('.sheet:has-text("Condividi il piano")').count() == 1, 'tema scuro e «Riduci movimento»: il flusso completo funziona')
@@ -238,7 +238,7 @@ with sync_playwright() as p:
     ok(True, 'ricerca non raggiungibile: errore chiaro con «Riprova»')
     shot(pg, '28-errore-ricerca')
     pg.fill('.search input', ''); tap(pg, '.row:has-text("Bolgia")', 400); tap(pg, 'button:has-text("Continua")', 900)
-    tap(pg, '[role=radio]:has-text("Luca")', 300); tap(pg, 'button:has-text("Continua")', 600)
+    tap(pg, '[role=radio]:has-text("Matteo")', 300); tap(pg, 'button:has-text("Continua")', 600)
     pg.wait_for_selector('.notice:has-text("Il servizio dei percorsi non risponde")', timeout=20000)
     ok(pg.locator('.stop').count() >= 2, 'routing non raggiungibile: tappe e scelte conservate, con «Riprova» e inserimento manuale')
     tap(pg, '.grab', 500); shot(pg, '29-errore-percorso')
