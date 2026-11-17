@@ -1,0 +1,212 @@
+-- Giro — schema del database (Supabase / Postgres).
+-- Incolla tutto nell'SQL Editor di Supabase ed esegui una volta.
+-- I saldi NON sono salvati: l'app li ricalcola sempre dai viaggi confermati e dai rimborsi.
+
+create extension if not exists pgcrypto;
+
+create table if not exists public.groups (
+  id uuid primary key default gen_random_uuid(),
+  name text not null check (char_length(name) between 1 and 60),
+  invite_code text not null unique default encode(gen_random_bytes(9), 'hex'),
+  settings jsonb not null default '{}'::jsonb,
+  created_at timestamptz not null default now()
+);
+
+create table if not exists public.members (
+  id uuid primary key default gen_random_uuid(),
+  group_id uuid not null references public.groups(id) on delete cascade,
+  user_id uuid references auth.users(id) on delete set null,
+  name text not null check (char_length(name) between 1 and 40),
+  color int not null default 0,
+  home jsonb,                       -- valorizzata solo se la casa è condivisa col gruppo
+  home_shared boolean not null default false,
+  joined_at timestamptz not null default now(),
+  left_at timestamptz               -- chi lascia il gruppo resta nello storico
+);
+create unique index if not exists members_group_user on public.members(group_id, user_id) where user_id is not null;
+
+create table if not exists public.private_homes (
+  group_id uuid not null references public.groups(id) on delete cascade,
+  user_id uuid not null references auth.users(id) on delete cascade,
+  home jsonb,
+  primary key (group_id, user_id)
+);
+
+create table if not exists public.places (
+  id uuid primary key default gen_random_uuid(),
+  group_id uuid not null references public.groups(id) on delete cascade,
+  name text not null,
+  address text,
+  lat double precision not null,
+  lng double precision not null,
+  kind text not null default 'locale',
+  created_at timestamptz not null default now()
+);
+
+create table if not exists public.trips (
+  id uuid primary key,              -- generato dal dispositivo: reinviare lo stesso viaggio non lo duplica
+  group_id uuid not null references public.groups(id) on delete cascade,
+  status text not null check (status in ('planned', 'confirmed', 'cancelled')),
+  starts_at timestamptz not null,
+  data jsonb not null,              -- destinazione, presenti, tratte, tappe, km, pedaggi
+  version int not null default 1,
+  created_by uuid references public.members(id),
+  updated_by uuid references public.members(id),
+  updated_at timestamptz not null default now(),
+  confirmed_at timestamptz,
+  created_at timestamptz not null default now()
+);
+create index if not exists trips_group on public.trips(group_id, starts_at desc);
+
+create table if not exists public.settlements (
+  id uuid primary key,
+  group_id uuid not null references public.groups(id) on delete cascade,
+  from_member uuid not null references public.members(id),
+  to_member uuid not null references public.members(id),
+  cents int not null check (cents > 0),
+  created_by uuid references public.members(id),
+  created_at timestamptz not null default now()
+);
+
+-- ---------------------------------------------------------------------------
+-- Accesso: solo i membri attivi del gruppo
+-- ---------------------------------------------------------------------------
+create or replace function public.is_member(g uuid) returns boolean
+language sql stable security definer set search_path = public as $$
+  select exists (select 1 from public.members where group_id = g and user_id = auth.uid() and left_at is null)
+$$;
+
+alter table public.groups enable row level security;
+alter table public.members enable row level security;
+alter table public.private_homes enable row level security;
+alter table public.places enable row level security;
+alter table public.trips enable row level security;
+alter table public.settlements enable row level security;
+
+drop policy if exists groups_select on public.groups;
+drop policy if exists groups_update on public.groups;
+create policy groups_select on public.groups for select to authenticated using (public.is_member(id));
+create policy groups_update on public.groups for update to authenticated using (public.is_member(id)) with check (public.is_member(id));
+
+drop policy if exists members_select on public.members;
+drop policy if exists members_insert on public.members;
+drop policy if exists members_update on public.members;
+create policy members_select on public.members for select to authenticated using (public.is_member(group_id));
+-- a mano si possono aggiungere solo membri senza account; gli account entrano con join_group
+create policy members_insert on public.members for insert to authenticated with check (public.is_member(group_id) and user_id is null);
+create policy members_update on public.members for update to authenticated using (public.is_member(group_id) and user_id = auth.uid()) with check (public.is_member(group_id) and user_id = auth.uid());
+
+drop policy if exists homes_all on public.private_homes;
+create policy homes_all on public.private_homes for all to authenticated using (user_id = auth.uid()) with check (user_id = auth.uid() and public.is_member(group_id));
+
+drop policy if exists places_all on public.places;
+create policy places_all on public.places for all to authenticated using (public.is_member(group_id)) with check (public.is_member(group_id));
+
+drop policy if exists trips_select on public.trips;
+drop policy if exists trips_insert on public.trips;
+drop policy if exists trips_update on public.trips;
+create policy trips_select on public.trips for select to authenticated using (public.is_member(group_id));
+create policy trips_insert on public.trips for insert to authenticated with check (public.is_member(group_id));
+create policy trips_update on public.trips for update to authenticated using (public.is_member(group_id)) with check (public.is_member(group_id));
+-- nessuna policy di delete: i viaggi si annullano, non si cancellano
+
+drop policy if exists settlements_all on public.settlements;
+create policy settlements_all on public.settlements for all to authenticated using (public.is_member(group_id)) with check (public.is_member(group_id));
+
+-- ---------------------------------------------------------------------------
+-- Coerenza: una modifica alla volta per viaggio
+-- ---------------------------------------------------------------------------
+create or replace function public.trips_guard() returns trigger language plpgsql as $$
+begin
+  if new.version <> old.version + 1 then
+    raise exception 'conflict: il viaggio è stato modificato da un altro dispositivo' using errcode = '40001';
+  end if;
+  if new.group_id <> old.group_id then raise exception 'group_id non modificabile'; end if;
+  new.updated_at := now();
+  if new.status = 'confirmed' and old.status <> 'confirmed' then new.confirmed_at := now(); end if;
+  return new;
+end $$;
+drop trigger if exists trips_guard on public.trips;
+create trigger trips_guard before update on public.trips for each row execute function public.trips_guard();
+
+create or replace function public.members_guard() returns trigger language plpgsql as $$
+begin
+  if (new.user_id is distinct from old.user_id or new.group_id <> old.group_id or new.left_at is distinct from old.left_at)
+     and coalesce(current_setting('giro.rpc', true), '') <> '1' then
+    raise exception 'campo non modificabile direttamente';
+  end if;
+  return new;
+end $$;
+drop trigger if exists members_guard on public.members;
+create trigger members_guard before update on public.members for each row execute function public.members_guard();
+
+-- ---------------------------------------------------------------------------
+-- Gruppi e inviti
+-- ---------------------------------------------------------------------------
+create or replace function public.create_group(p_name text, p_member_name text) returns uuid
+language plpgsql security definer set search_path = public as $$
+declare g uuid;
+begin
+  if auth.uid() is null then raise exception 'accesso richiesto'; end if;
+  insert into public.groups(name) values (p_name) returning id into g;
+  insert into public.members(group_id, user_id, name) values (g, auth.uid(), p_member_name);
+  return g;
+end $$;
+
+create or replace function public.invite_preview(p_code text) returns jsonb
+language sql stable security definer set search_path = public as $$
+  select jsonb_build_object(
+    'group_id', g.id, 'name', g.name,
+    'already_member', exists (select 1 from public.members m where m.group_id = g.id and m.user_id = auth.uid() and m.left_at is null),
+    'unclaimed', coalesce((select jsonb_agg(jsonb_build_object('id', m.id, 'name', m.name) order by m.joined_at)
+                           from public.members m where m.group_id = g.id and m.user_id is null and m.left_at is null), '[]'::jsonb))
+  from public.groups g where g.invite_code = p_code and auth.uid() is not null
+$$;
+
+-- Chi entra parte da zero: i viaggi precedenti non gli attribuiscono quote.
+create or replace function public.join_group(p_code text, p_name text, p_claim uuid default null) returns uuid
+language plpgsql security definer set search_path = public as $$
+declare g uuid; n int;
+begin
+  if auth.uid() is null then raise exception 'accesso richiesto'; end if;
+  select id into g from public.groups where invite_code = p_code;
+  if g is null then raise exception 'Invito non valido o scaduto'; end if;
+  perform set_config('giro.rpc', '1', true);
+  update public.members set left_at = null where group_id = g and user_id = auth.uid();
+  get diagnostics n = row_count;
+  if n > 0 then return g; end if;
+  if p_claim is not null then
+    update public.members set user_id = auth.uid() where id = p_claim and group_id = g and user_id is null and left_at is null;
+    get diagnostics n = row_count;
+    if n > 0 then return g; end if;
+  end if;
+  select count(*) into n from public.members where group_id = g;
+  insert into public.members(group_id, user_id, name, color) values (g, auth.uid(), p_name, n % 8);
+  return g;
+end $$;
+
+create or replace function public.leave_group(p_group uuid) returns void
+language plpgsql security definer set search_path = public as $$
+begin
+  perform set_config('giro.rpc', '1', true);
+  update public.members set left_at = now(), home = null, home_shared = false where group_id = p_group and user_id = auth.uid();
+  delete from public.private_homes where group_id = p_group and user_id = auth.uid();
+end $$;
+
+revoke all on function public.create_group(text, text), public.invite_preview(text), public.join_group(text, text, uuid), public.leave_group(uuid) from public, anon;
+grant execute on function public.create_group(text, text), public.invite_preview(text), public.join_group(text, text, uuid), public.leave_group(uuid), public.is_member(uuid) to authenticated;
+
+-- ---------------------------------------------------------------------------
+-- Aggiornamenti in tempo reale tra dispositivi
+-- ---------------------------------------------------------------------------
+do $$
+declare t text;
+begin
+  if exists (select 1 from pg_publication where pubname = 'supabase_realtime') then
+    foreach t in array array['groups', 'members', 'places', 'trips', 'settlements'] loop
+      if not exists (select 1 from pg_publication_tables where pubname = 'supabase_realtime' and schemaname = 'public' and tablename = t) then
+        execute format('alter publication supabase_realtime add table public.%I', t);
+      end if;
+    end loop;
+  end if;
+end $$;
