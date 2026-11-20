@@ -7,6 +7,7 @@ import { ConflictError, type Store } from './types'
 export function friendly(msg: string): string {
   const m = msg.toLowerCase()
   if (m.includes('failed to fetch') || m.includes('networkerror') || m.includes('load failed') || m.includes('aborted')) return 'Connessione assente o lenta: riprova tra poco. I dati inseriti restano qui.'
+  if (m.includes('rate limit') || m.includes('security purposes')) return 'Troppe email di accesso in poco tempo: riprova tra un po\'. Se hai già un\'email di accesso, usa quella.'
   if (m.includes('jwt') || m.includes('not authenticated') || m.includes('accesso richiesto')) return 'Sessione scaduta: accedi di nuovo. Le uscite in preparazione restano salvate.'
   if (m.includes('trips_data_shape')) return 'Il viaggio contiene dati non validi e non è stato salvato.'
   if (m.includes('permission denied') || m.includes('row-level security') || m.includes('accesso negato')) return 'Non hai i permessi per questa modifica.'
