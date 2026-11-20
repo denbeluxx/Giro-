@@ -1,6 +1,6 @@
 import { Component, createContext, useCallback, useContext, useEffect, useMemo, useRef, useState, type ReactNode } from 'react'
 import { flushSync } from 'react-dom'
-import { balances, type Balances } from './lib/calc'
+import { balances, displayRound, type Balances } from './lib/calc'
 import { ConflictError, store, type GroupSummary, type InvitePreview, type Session } from './lib/store'
 import type { GroupData, ID, Member, Trip } from './lib/types'
 import { Home } from './screens/Home'
@@ -12,7 +12,7 @@ import { Btn, Empty, Icon, Notice, Skel, ToastHost, openSheets, reducedMotion, u
 export type Route =
   | { s: 'home' } | { s: 'members' } | { s: 'places' } | { s: 'history' } | { s: 'money' }
   | { s: 'plan'; mode: 'plan' | 'record'; edit?: Trip; redo?: Trip; at?: 0 | 1 | 2; resume?: boolean }
-  | { s: 'trip'; id: ID; fresh?: boolean }
+  | { s: 'trip'; id: ID; fresh?: boolean; shotgun?: boolean }
 
 interface Ctx {
   data: GroupData; bal: Balances; me: Member; byId: (id?: ID | null) => Member | undefined; active: Member[]
@@ -43,6 +43,8 @@ export function transition(dir: 'push' | 'pop' | 'fade', fn: () => void) {
 }
 
 const params = new URLSearchParams(window.location.search)
+/** Soglia dell'avviso «saldo molto negativo». */
+const LOW_M = -70000
 /** Uscita volontaria in corso: non va confusa con una sessione scaduta. */
 export const signingOut = { current: false }
 const clearParams = () => { try { history.replaceState(history.state, '', window.location.pathname) } catch { /* */ } }
@@ -112,6 +114,8 @@ function Splash() {
 
 function GroupProvider({ groupId, groups, switchGroup, deepTrip, missing, clearDeep }: { groupId: ID; groups: GroupSummary[]; switchGroup: (id: ID | null) => void; deepTrip: string | null; missing?: boolean; clearDeep: () => void }) {
   const [data, setData] = useState<GroupData | null>(null)
+  const dataRef = useRef<GroupData | null>(null)
+  dataRef.current = data
   const [err, setErr] = useState<string | null>(null)
   const [stack, setStack] = useState<Route[]>([{ s: 'home' }])
   const toast = useToast()
@@ -123,7 +127,7 @@ function GroupProvider({ groupId, groups, switchGroup, deepTrip, missing, clearD
   }, [groupId])
   useEffect(() => { reload(); return store.subscribe(groupId, reload) }, [groupId, reload])
   useEffect(() => { if (data && missing) { toast('Il link apre un\'uscita che non esiste o non è di questo gruppo.'); clearDeep() } }, [data, missing]) // eslint-disable-line react-hooks/exhaustive-deps
-  useEffect(() => { if (data && deepTrip) { clearDeep(); if (data.trips.some((t) => t.id === deepTrip)) { forward(); setStack([{ s: 'home' }, { s: 'trip', id: deepTrip }]) } else toast('Questa uscita non è più disponibile.') } }, [data, deepTrip]) // eslint-disable-line react-hooks/exhaustive-deps
+  useEffect(() => { if (data && deepTrip) { clearDeep(); if (data.trips.some((t) => t.id === deepTrip)) { forward(); setStack([{ s: 'home' }, { s: 'trip', id: deepTrip, shotgun: params.get('shotgun') === '1' }]) } else toast('Questa uscita non è più disponibile.') } }, [data, deepTrip]) // eslint-disable-line react-hooks/exhaustive-deps
 
   // ---- Navigazione legata alla cronologia: il tasto o il gesto Indietro del telefono torna indietro di un livello ----
   const level = useRef(0)
@@ -175,7 +179,14 @@ function GroupProvider({ groupId, groups, switchGroup, deepTrip, missing, clearD
   const saveTrip = useCallback(async (t: Trip, expected: number | null) => {
     try {
       const saved = await store.saveTrip(t, expected)
+      const before = dataRef.current
       setData((d) => d && { ...d, trips: d.trips.some((x) => x.id === saved.id) ? d.trips.map((x) => (x.id === saved.id ? saved : x)) : [saved, ...d.trips] })
+      // avviso a chi scende sotto i −70 km con questo viaggio (lo manda il servizio notifiche, al massimo uno al giorno)
+      if (before) {
+        const after = before.trips.some((x) => x.id === saved.id) ? before.trips.map((x) => (x.id === saved.id ? saved : x)) : [saved, ...before.trips]
+        const a = displayRound(balances(before.members, before.trips, before.settlements).km), b = displayRound(balances(before.members, after, before.settlements).km)
+        for (const m of before.members) if (!m.leftAt && m.userId && (a[m.id] ?? 0) > LOW_M && (b[m.id] ?? 0) <= LOW_M) store.notify({ type: 'low', groupId, memberId: m.id, km: (b[m.id] ?? 0) / 1000 }).catch(() => {})
+      }
       return saved
     } catch (e) {
       if (e instanceof ConflictError) {
@@ -213,7 +224,7 @@ function GroupProvider({ groupId, groups, switchGroup, deepTrip, missing, clearD
       {r.s === 'history' && <History />}
       {r.s === 'money' && <Money />}
       {r.s === 'plan' && <Plan key={`${r.edit?.id ?? r.redo?.id ?? 'new'}-${stack.length}`} mode={r.mode} edit={r.edit} redo={r.redo} at={r.at} resume={r.resume} />}
-      {r.s === 'trip' && <TripView key={r.id} id={r.id} fresh={r.fresh} />}
+      {r.s === 'trip' && <TripView key={r.id} id={r.id} fresh={r.fresh} autoShotgun={r.shotgun} />}
     </C.Provider>
   )
 }

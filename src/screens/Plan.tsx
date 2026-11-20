@@ -376,7 +376,7 @@ export function Plan({ mode, edit, redo, at, resume }: { mode: 'plan' | 'record'
     if (!edit) clearDraft(data.group.id)
     if (edit) { leaving.current = true; toast('Modifiche salvate'); leave(stepStack.current.length) }
     else if (recording) setDone(out)
-    else { collapse(stepStack.current.length - 1); replace({ s: 'trip', id: out.id, fresh: true }) }
+    else { if (out.status === 'planned') store.notify({ type: 'new_trip', tripId: out.id }).catch(() => {}); collapse(stepStack.current.length - 1); replace({ s: 'trip', id: out.id, fresh: true }) }
   })
   const exit = () => { if (leaving.current) return; leaving.current = true; saved.current = true; if (!edit) clearDraft(data.group.id); setSheet(null); leave(stepStack.current.length) }
 

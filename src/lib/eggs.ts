@@ -78,3 +78,16 @@ export function tiedForDriver(members: Member[], presentIds: ID[], unavailableId
   const tied = cands.filter((m) => tenth(m.id) === min).map((m) => m.id)
   return tied.length >= 2 ? tied : []
 }
+
+/** Posto davanti («Shotgun!»): chi lo ha, e se io posso ancora chiamarlo.
+ *  Un posto preso da chi poi non viene più o è diventato il conducente torna libero. */
+/** Fino a 2 ore dopo l'orario di partenza (chi arriva tardi) si può ancora chiamare. */
+export const SHOTGUN_GRACE_MS = 2 * 3600e3
+export function frontSeat(t: Trip, shotguns: Record<ID, ID> | undefined, meId: ID, now = Date.now()): { holder?: ID; canCall: boolean } {
+  if (t.status !== 'planned') return { canCall: false }
+  const drivers = new Set(t.legs.map((l) => l.driverId).filter(Boolean))
+  const raw = shotguns?.[t.id]
+  const holder = raw && t.presentIds.includes(raw) && !drivers.has(raw) ? raw : undefined
+  const open = new Date(t.startsAt).getTime() > now - SHOTGUN_GRACE_MS
+  return { holder, canCall: open && !holder && t.presentIds.includes(meId) && !drivers.has(meId) }
+}

@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { lostDays, nightOwl, perfectEven, recordTripId, saint, tiedForDriver, titles } from './eggs'
+import { frontSeat, lostDays, nightOwl, perfectEven, recordTripId, saint, tiedForDriver, titles } from './eggs'
 import type { Member, Trip } from './types'
 
 const mem = (id: string, joinedAt = '2026-01-01T00:00:00Z'): Member => ({ id, groupId: 'g', userId: null, name: id, color: 0, home: null, homeShared: false, joinedAt, leftAt: null })
@@ -44,5 +44,14 @@ describe('easter egg', () => {
     const bal = { km: { A: -1040, B: -1010, C: 500 }, eur: {}, lastDrove: {} }
     expect(tiedForDriver([mem('A'), mem('B'), mem('C')], ['A', 'B', 'C'], [], bal)).toEqual(['A', 'B'])
     expect(tiedForDriver([mem('A'), mem('B'), mem('C')], ['A', 'B', 'C'], ['B'], bal)).toEqual([])
+  })
+  it('Shotgun: chi guida non lo chiama, il primo lo tiene, un posto non più valido torna libero', () => {
+    const t = trip('t', new Date(Date.now() + 86400e3).toISOString(), 'A', ['A', 'B', 'C'], 10, undefined, 'planned')
+    expect(frontSeat(t, {}, 'A')).toEqual({ holder: undefined, canCall: false })
+    expect(frontSeat(t, {}, 'B')).toEqual({ holder: undefined, canCall: true })
+    expect(frontSeat(t, { t: 'B' }, 'C')).toEqual({ holder: 'B', canCall: false })
+    expect(frontSeat({ ...t, presentIds: ['A', 'C'] }, { t: 'B' }, 'C')).toEqual({ holder: undefined, canCall: true })
+    expect(frontSeat({ ...t, status: 'confirmed' }, { t: 'B' }, 'C').canCall).toBe(false)
+    expect(frontSeat({ ...t, startsAt: new Date(Date.now() - 3 * 3600e3).toISOString() }, {}, 'B').canCall).toBe(false)
   })
 })

@@ -7,7 +7,8 @@ import { store } from '../lib/store'
 import type { Trip } from '../lib/types'
 import { Avatar, Btn, Count, Icon, Sheet, led } from '../ui/kit'
 import { clearDraft, loadDraft } from './Plan'
-import { lostDays, perfectEven, saint, titles } from '../lib/eggs'
+import { frontSeat, lostDays, perfectEven, saint, titles } from '../lib/eggs'
+import { enablePush, usePush } from '../lib/push'
 
 export const tone = (v: number) => (roundKm(v) > 0 ? 'pos' : roundKm(v) < 0 ? 'neg' : 'dim')
 
@@ -38,6 +39,16 @@ export function Home() {
   }, [my, pari, data.group.id, me.id])
   const [ask, setAsk] = useState(false)
   const draft = loadDraft(data.group.id)
+  const [push$, setPush] = usePush()
+  const [pushHidden, setPushHidden] = useState(() => { try { return localStorage.getItem('shotgun-push-hidden') === '1' } catch { return false } })
+  const [pushBusy, setPushBusy] = useState(false)
+  const [pushErr, alertMsg] = useState<string | undefined>()
+  const hidePush = () => { setPushHidden(true); try { localStorage.setItem('shotgun-push-hidden', '1') } catch { /* */ } }
+  const turnOn = async () => {
+    if (pushBusy) return
+    setPushBusy(true)
+    try { const s = await enablePush(); setPush(s); if (s === 'on') hidePush() } catch (e: any) { setPush('off'); alertMsg(e?.message) } finally { setPushBusy(false) }
+  }
 
   const banner = (t: Trip, hot: boolean) => {
     const d = byId(t.legs[0]?.driverId)
@@ -47,7 +58,7 @@ export function Home() {
         <span className="grow" style={{ flex: 1, minWidth: 0 }}>
           <div className="kicker">{hot ? 'Conferma il viaggio' : 'Prossima uscita'}</div>
           <div className="bt">{t.dest.name}</div>
-          <div className="s">{fmtDate(t.startsAt)} {fmtTime(t.startsAt)} · {d ? `${hot ? 'guidava' : 'guida'} ${d.name}` : 'conducente da decidere'}</div>
+          <div className="s">{fmtDate(t.startsAt)} {fmtTime(t.startsAt)} · {d ? `${hot ? 'guidava' : 'guida'} ${d.name}` : 'conducente da decidere'}{!hot && (() => { const h = frontSeat(t, data.shotguns, me.id).holder; return h ? ` · davanti ${h === me.id ? 'tu' : byId(h)?.name}` : '' })()}</div>
         </span>
         <Icon n="chev" size={18} />
       </button>
@@ -79,6 +90,15 @@ export function Home() {
             <div className="s">{draft.dest?.name ?? 'Destinazione da scegliere'} · {draft.present.length} {draft.present.length === 1 ? 'persona' : 'persone'}</div>
           </button>
           <button className="nav-btn" aria-label="Elimina la bozza" onClick={() => { clearDraft(data.group.id); force((x) => x + 1) }}><Icon n="x" size={20} /></button>
+        </div>}
+        {!pushHidden && (push$ === 'off' || push$ === 'needs-home') && <div className="notify-banner">
+          <Icon n="bell" size={24} />
+          <span className="grow" style={{ flex: 1, minWidth: 0 }}>
+            <div className="t">{push$ === 'off' ? 'Attiva le notifiche' : 'Notifiche su iPhone'}</div>
+            <div className="s">{pushErr ?? (push$ === 'off' ? 'Ti avvisiamo delle nuove uscite, così puoi chiamare Shotgun per primo.' : 'Aggiungi Shotgun alla schermata Home (Condividi → «Aggiungi alla schermata Home») e aprila da lì.')}</div>
+          </span>
+          {push$ === 'off' && <Btn small busy={pushBusy} onClick={turnOn}>Attiva</Btn>}
+          <button className="nav-btn" aria-label="Non ora" onClick={hidePush}><Icon n="x" size={20} /></button>
         </div>}
         {due.slice(0, 2).map((t) => banner(t, true))}
         {due.length > 2 && <button className="link-under" onClick={() => push({ s: 'history' })}>Altri {due.length - 2} viaggi da confermare nello storico</button>}

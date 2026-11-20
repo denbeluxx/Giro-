@@ -5,7 +5,7 @@ import { sanitizeTrips } from '../validate'
 import { ConflictError, type Store } from './types'
 
 const KEY = 'shotgun-demo-v5'
-interface G { group: Group; members: Member[]; places: Place[]; trips: Trip[]; settlements: GroupData['settlements'] }
+interface G { group: Group; members: Member[]; places: Place[]; trips: Trip[]; settlements: GroupData['settlements']; shotguns?: Record<ID, ID> }
 interface DB { groups: Record<ID, G> }
 
 const mem: { db?: string } = {}
@@ -20,6 +20,7 @@ function repair(x: any): DB | null {
     const seen = new Set<string>()
     g.trips = arr(g.trips).filter((t: any) => t.id && !seen.has(t.id) && seen.add(t.id))
     g.settlements = arr(g.settlements)
+    g.shotguns = g.shotguns && typeof g.shotguns === 'object' && !Array.isArray(g.shotguns) ? g.shotguns : {}
   }
   return Object.keys(x.groups).length ? (x as DB) : null
 }
@@ -126,7 +127,7 @@ export const localStore: Store = {
     const g = read().groups[groupId]
     if (!g) throw new Error('Gruppo non trovato')
     const c = structuredClone(g)
-    return { ...c, trips: sanitizeTrips(c.trips), meId: meOf(g) }
+    return { ...c, shotguns: c.shotguns ?? {}, trips: sanitizeTrips(c.trips), meId: meOf(g) }
   },
   subscribe(_id, cb) { listeners.add(cb); return () => listeners.delete(cb) },
 
@@ -157,5 +158,19 @@ export const localStore: Store = {
   async removeMember(groupId, id) { const db = read(); const m = db.groups[groupId].members.find((x) => x.id === id && !x.userId); if (!m) throw new Error('Si possono togliere solo i membri senza account'); m.leftAt = new Date().toISOString(); write(db) },
   async updateMe(groupId, patch) { const db = read(); const g = db.groups[groupId]; const m = g.members.find((x) => x.id === meOf(g))!; Object.assign(m, patch); write(db) },
   async setGroupToll(groupId, key, toll) { const db = read(); const g = db.groups[groupId].group; const t = { ...(g.settings.tolls ?? {}) }; if (toll) t[key] = toll; else delete t[key]; g.settings = { ...g.settings, tolls: t }; write(db) },
+  async claimShotgun(groupId, tripId) {
+    await wait(); const db = read(), g = db.groups[groupId]; const me = meOf(g)
+    const t = g.trips.find((x) => x.id === tripId)
+    if (!t || t.status !== 'planned') throw new Error('Shotgun vale solo per le uscite in programma.')
+    if (!t.presentIds.includes(me)) throw new Error('Non sei tra i presenti di questa uscita.')
+    if (t.legs.some((l) => l.driverId === me)) throw new Error('Guidi tu: il posto davanti lo lasci agli altri.')
+    if (new Date(t.startsAt).getTime() < Date.now() - 2 * 3600e3) throw new Error('Troppo tardi: l\'uscita è già partita.')
+    g.shotguns = g.shotguns ?? {}
+    const cur = g.shotguns[tripId]
+    if (!cur || !t.presentIds.includes(cur) || t.legs.some((l) => l.driverId === cur)) { g.shotguns[tripId] = me; write(db) }
+    return g.shotguns[tripId]
+  },
+  async pushKey() { throw new Error('Le notifiche funzionano con l\'app collegata al gruppo vero, non con i dati dimostrativi.') },
+  async savePush() {}, async deletePush() {}, async notify() {},
   async updateGroup(groupId, patch) { const db = read(); const g = db.groups[groupId]; Object.assign(g.group, patch); write(db); return g.group },
 }

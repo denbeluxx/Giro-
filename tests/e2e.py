@@ -247,6 +247,23 @@ with sync_playwright() as p:
     ok(pg.inner_text('h1.title') == 'Compagnia del giro' and db(pg)['group']['name'] == 'Compagnia del giro', 'il nome del gruppo si può cambiare')
     c4.close()
 
+    # --- Shotgun: il posto davanti al primo che lo chiama ---
+    c5 = b.new_context(viewport={'width': 390, 'height': 844}, device_scale_factor=2, is_mobile=True, has_touch=True, locale='it-IT'); pg = c5.new_page(); pg.goto(SIM)
+    hero(pg)
+    pg.evaluate("""() => { const d = JSON.parse(localStorage.getItem('shotgun-demo-v5')); const t = d.groups['demo-group'].trips.find((x) => x.id === 't-4'); t.startsAt = new Date(Date.now() + 86400e3).toISOString(); localStorage.setItem('shotgun-demo-v5', JSON.stringify(d)) }""")
+    pg.reload(); hero(pg); tap(pg, '.banner:has-text("Bolgia")', 900)
+    ok(pg.locator('.shotgun-btn').count() == 1, 'chi viene come passeggero vede il tasto «Shotgun!»')
+    tap(pg, '.shotgun-btn', 1200); shot(pg, '31-shotgun')
+    ok(pg.locator('.shotgun-card:has-text("È tuo")').count() == 1 and db(pg)['shotguns'].get('t-4') == 'm-daniele', 'chiamato Shotgun: il posto davanti è registrato')
+    tap(pg, '.nav-btn:has-text("Indietro")', 600); tap(pg, '.nav .nav-btn', 700)
+    pg.locator('.chip:has-text("Matteo")').last.scroll_into_view_if_needed(); tap(pg, '.section:has-text("Modalità dimostrativa") .chip:has-text("Matteo")', 700)
+    tap(pg, '.nav-btn:has-text("Indietro")', 600); tap(pg, '.banner:has-text("Bolgia")', 900)
+    ok(pg.locator('.shotgun-btn').count() == 0 and pg.locator('.shotgun-card:has-text("Daniele ha chiamato Shotgun")').count() == 1, 'gli altri vedono chi ha preso il posto davanti, senza poterlo rubare')
+    tap(pg, '.nav-btn:has-text("Indietro")', 600); tap(pg, '.nav .nav-btn', 700)
+    pg.locator('.chip:has-text("Filippo")').last.scroll_into_view_if_needed(); tap(pg, '.section:has-text("Modalità dimostrativa") .chip:has-text("Filippo")', 700)
+    ok('dimostrativi' in pg.inner_text('.section:has-text("Notifiche")'), 'nei dati dimostrativi le notifiche sono dichiarate non disponibili')
+    c5.close()
+
     # --- Build reale senza rete: il routing fallisce, i dati restano ---
     c4 = new_ctx(b); pg = c4.new_page(); pg.goto(REAL); hero(pg)
     tap(pg, 'text=Organizza uscita', 600)

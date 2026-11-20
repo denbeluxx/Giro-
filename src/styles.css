@@ -452,3 +452,25 @@ button.hchip:active { transform: scale(0.97); }
 }
 .egg-pills { display: flex; gap: 6px; flex-wrap: wrap; margin-top: 6px; }
 .egg-pills .pill { font-size: 9.5px; padding: 2px 7px; }
+
+/* ---- «Shotgun!»: il posto davanti ---- */
+.shotgun-btn { display: flex; align-items: center; gap: 14px; width: 100%; margin-top: 14px; min-height: 64px; padding: 12px 16px; border-radius: 18px; text-align: left; color: var(--text);
+  border: 1px solid transparent; background: var(--satin) padding-box, linear-gradient(120deg, #ff5ea8, #ffb347 45%, #38e1ff) border-box;
+  box-shadow: 0 0 22px rgba(255, 94, 168, 0.28), inset 0 1px 0 rgba(255, 255, 255, 0.08); transition: transform 0.15s ease, box-shadow 0.2s ease; }
+.shotgun-btn b { display: block; font-size: 19px; letter-spacing: 0.02em; text-transform: uppercase; }
+.shotgun-btn span span { display: block; font-size: 13px; color: var(--dim); margin-top: 2px; }
+.shotgun-btn svg { color: #ff8fc4; flex: none; filter: drop-shadow(0 0 8px rgba(255, 94, 168, 0.8)); }
+.shotgun-btn:active { transform: scale(0.98); }
+.shotgun-btn:disabled { opacity: 0.7; }
+.shotgun-card { display: flex; align-items: center; gap: 12px; margin-top: 14px; padding: 12px 14px; border-radius: 18px; background: var(--satin) padding-box, var(--chrome) border-box; border: 1px solid transparent; }
+.shotgun-card .s { font-size: 13px; color: var(--dim); }
+.shotgun-card .t { font-weight: 600; }
+.shotgun-card.won { animation: shotgun-won 0.9s ease-out; }
+@keyframes shotgun-won { 0% { transform: scale(0.96); box-shadow: 0 0 0 rgba(255, 94, 168, 0); } 35% { transform: scale(1.03); box-shadow: 0 0 34px rgba(255, 94, 168, 0.65); } 100% { transform: none; box-shadow: none; } }
+.pill.shotgun { display: inline-flex; align-items: center; gap: 4px; background: rgba(0, 0, 0, 0.3); color: #ff9fcd; box-shadow: inset 0 0 0 1px rgba(255, 94, 168, 0.55), 0 0 12px rgba(255, 94, 168, 0.25); }
+.shotgun-free { display: flex; align-items: center; gap: 6px; margin: 12px 4px 0; font-size: 13px; color: var(--dim); }
+.notify-banner { display: flex; align-items: center; gap: 12px; margin-top: 14px; padding: 12px 14px; border-radius: 16px; border: 1px dashed rgba(56, 225, 255, 0.45); background: rgba(0, 0, 0, 0.22); }
+.notify-banner svg { color: #38e1ff; flex: none; filter: drop-shadow(0 0 6px rgba(56, 225, 255, 0.7)); }
+.notify-banner .t { font-weight: 600; font-size: 15px; }
+.notify-banner .s { font-size: 13px; color: var(--dim); margin-top: 2px; }
+@media (prefers-reduced-motion: reduce) { .shotgun-card.won { animation: none; } }

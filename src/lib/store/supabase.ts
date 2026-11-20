@@ -65,13 +65,14 @@ export function supabaseStore(url: string, key: string): Store {
     async findTripGroup(tripId) { const r = await sb.from('trips').select('group_id').eq('id', tripId).maybeSingle(); return r.data?.group_id ?? null },
     async loadGroup(groupId) {
       const me = await uidOrThrow()
-      const [g, m, p, t, s, h] = await Promise.all([
+      const [g, m, p, t, s, h, sg] = await Promise.all([
         sb.from('groups').select('*').eq('id', groupId).single(),
         sb.from('members').select('*').eq('group_id', groupId).order('joined_at'),
         sb.from('places').select('*').eq('group_id', groupId).order('name'),
         sb.from('trips').select('*').eq('group_id', groupId).order('starts_at', { ascending: false }),
         sb.from('settlements').select('*').eq('group_id', groupId).order('created_at', { ascending: false }),
         sb.from('private_homes').select('*').eq('group_id', groupId).eq('user_id', me).maybeSingle(),
+        sb.from('trip_shotgun').select('trip_id, member_id').eq('group_id', groupId),
       ])
       const members = (must(m) as any[]).map(toMember)
       const mine = members.find((x) => x.userId === me && !x.leftAt)
@@ -82,6 +83,8 @@ export function supabaseStore(url: string, key: string): Store {
         group: toGroup(must(g)), members, meId: mine.id,
         places: (must(p) as any[]).map((r): Place => ({ id: r.id, name: r.name, address: r.address ?? undefined, lat: r.lat, lng: r.lng, kind: r.kind })),
         trips: sanitizeTrips((must(t) as any[]).map(toTrip)),
+        // se la tabella non c'è ancora (schema vecchio) l'app funziona lo stesso, senza Shotgun
+        shotguns: Object.fromEntries(((sg.data ?? []) as any[]).map((r) => [r.trip_id, r.member_id])),
         settlements: (must(s) as any[]).map((r): Settlement => ({ id: r.id, groupId: r.group_id, from: r.from_member, to: r.to_member, cents: r.cents, createdAt: r.created_at, createdBy: r.created_by })),
       } satisfies GroupData
     },
@@ -89,7 +92,7 @@ export function supabaseStore(url: string, key: string): Store {
       let timer: any
       const fire = () => { clearTimeout(timer); timer = setTimeout(cb, 150) }
       const ch = sb.channel(`group-${groupId}`)
-      for (const table of ['trips', 'members', 'settlements', 'places']) ch.on('postgres_changes', { event: '*', schema: 'public', table, filter: `group_id=eq.${groupId}` }, fire)
+      for (const table of ['trips', 'members', 'settlements', 'places', 'trip_shotgun']) ch.on('postgres_changes', { event: '*', schema: 'public', table, filter: `group_id=eq.${groupId}` }, fire)
       ch.on('postgres_changes', { event: '*', schema: 'public', table: 'groups', filter: `id=eq.${groupId}` }, fire)
       // le cancellazioni non si possono filtrare per gruppo: basta ricaricare quando avvengono
       for (const table of ['settlements', 'places']) ch.on('postgres_changes', { event: 'DELETE', schema: 'public', table }, fire)
@@ -136,6 +139,15 @@ export function supabaseStore(url: string, key: string): Store {
       if (Object.keys(upd).length) must(await sb.from('members').update(upd).eq('id', cur.id).select())
     },
     async setGroupToll(groupId, key, toll) { must(await sb.rpc('set_group_toll', { p_group: groupId, p_key: key, p_value: toll })) },
+    async claimShotgun(_g, tripId) { const r = must(await sb.rpc('claim_shotgun', { p_trip: tripId })) as any; return r.member_id as string },
+    async pushKey() {
+      const { data, error } = await sb.functions.invoke('notify', { method: 'GET' })
+      if (error || !data?.publicKey) throw new Error('Il servizio notifiche non risponde. Riprova tra poco.')
+      return data.publicKey as string
+    },
+    async savePush(s) { must(await sb.rpc('save_push', { p_endpoint: s.endpoint, p_p256dh: s.p256dh, p_auth: s.auth })) },
+    async deletePush(endpoint) { await sb.from('push_subscriptions').delete().eq('endpoint', endpoint) },
+    async notify(body) { const { error } = await sb.functions.invoke('notify', { body }); if (error) console.warn('notifica non inviata', error) },
     async updateGroup(groupId, patch) { return toGroup(must(await sb.from('groups').update(patch).eq('id', groupId).select().single())) },
   }
 }

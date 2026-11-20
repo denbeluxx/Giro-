@@ -95,6 +95,8 @@ export interface GroupData {
   places: Place[]
   trips: Trip[]
   settlements: Settlement[]
+  /** Posto davanti prenotato con «Shotgun!»: id dell'uscita → id del membro. */
+  shotguns: Record<ID, ID>
   meId: ID
 }
 

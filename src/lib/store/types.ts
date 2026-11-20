@@ -45,4 +45,12 @@ export interface Store {
   updateGroup(groupId: ID, patch: { name?: string; settings?: GroupSettings }): Promise<Group>
   /** Aggiunge, cambia o (con null) toglie una sola tariffa del gruppo, senza toccare le altre. */
   setGroupToll(groupId: ID, key: string, toll: GroupToll | null): Promise<void>
+
+  /** «Shotgun!»: prenota il posto davanti. Restituisce chi lo ha (il primo che lo ha chiamato). */
+  claimShotgun(groupId: ID, tripId: ID): Promise<ID>
+  /** Notifiche: chiave pubblica del servizio, iscrizione e disiscrizione di questo dispositivo, invio di un avviso. */
+  pushKey(): Promise<string>
+  savePush(sub: { endpoint: string; p256dh: string; auth: string }): Promise<void>
+  deletePush(endpoint: string): Promise<void>
+  notify(body: { type: 'new_trip' | 'shotgun'; tripId: ID } | { type: 'low'; groupId: ID; memberId: ID; km: number }): Promise<void>
 }

@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useRef, useState } from 'react'
 import { useApp } from '../app'
-import { nightOwl, recordTripId } from '../lib/eggs'
+import { frontSeat, nightOwl, recordTripId } from '../lib/eggs'
 import { balances, displayRound, legToll, tripEffect, type TripEffect } from '../lib/calc'
 import { fmtDate, fmtDateLong, fmtEur, fmtEurSigned, fmtKm, fmtKmSigned, fmtTime } from '../lib/format'
 import { shareText, whatsappUrl } from '../lib/share'
@@ -60,7 +60,7 @@ export function Done({ trip, fx, meId, onClose }: { trip: Trip; fx: TripEffect; 
   )
 }
 
-export function TripView({ id, fresh }: { id: ID; fresh?: boolean }) {
+export function TripView({ id, fresh, autoShotgun }: { id: ID; fresh?: boolean; autoShotgun?: boolean }) {
   const app = useApp()
   const { data, byId, me, pop, push, home, saveTrip, onBack, forward } = app
   const stored = data.trips.find((t) => t.id === id)
@@ -92,6 +92,31 @@ export function TripView({ id, fresh }: { id: ID; fresh?: boolean }) {
     if (openedAt.current.sheet !== sheet) { openedAt.current = { sheet, version: trip.version }; return }
     if ((sheet === 'km' || sheet === 'toll') && trip.version !== openedAt.current.version && !ownSave.current) { setSheet(null); toast('Viaggio aggiornato da un altro dispositivo: riapri per vedere i dati nuovi') }
   }, [sheet, trip?.version]) // eslint-disable-line react-hooks/exhaustive-deps
+  // «Shotgun!»: il posto davanti va al primo che lo chiama
+  const seat = trip ? frontSeat(trip, data.shotguns, me.id) : { canCall: false }
+  const [claiming, setClaiming] = useState(false)
+  const [justWon, setJustWon] = useState(false)
+  const callShotgun = async () => {
+    if (claiming) return
+    setClaiming(true)
+    try {
+      const who = await store.claimShotgun(data.group.id, id)
+      if (who === me.id) {
+        setJustWon(true); navigator.vibrate?.([40, 30, 80])
+        toast('Shotgun! Il posto davanti è tuo')
+        store.notify({ type: 'shotgun', tripId: id }).catch(() => {})
+      } else toast(`Troppo tardi: Shotgun l'ha già chiamato ${byId(who)?.name ?? 'un altro'}`)
+      await app.reload()
+    } catch (e: any) { toast(e?.message ?? 'Shotgun non riuscito. Riprova.') } finally { setClaiming(false) }
+  }
+  // aperta dal tasto «Shotgun!» della notifica: si prenota subito
+  const autoDone = useRef(false)
+  useEffect(() => {
+    if (!autoShotgun || autoDone.current || !trip) return
+    autoDone.current = true
+    if (seat.canCall) callShotgun()
+    else if (seat.holder && seat.holder !== me.id) toast(`Troppo tardi: Shotgun l'ha già chiamato ${byId(seat.holder)?.name ?? 'un altro'}`)
+  }, [trip?.id]) // eslint-disable-line react-hooks/exhaustive-deps
   if (!trip) return <div className="screen"><div className="nav"><button className="nav-btn" onClick={pop}><Icon n="back" />Indietro</button></div><div className="scroll"><Empty icon="alert" title="Uscita non trovata" text="Potrebbe appartenere a un altro gruppo o essere stata rimossa." /></div></div>
 
   const fx = tripEffect(trip)
@@ -152,6 +177,10 @@ export function TripView({ id, fresh }: { id: ID; fresh?: boolean }) {
         </div>
 
         {trip.status === 'planned' && missingDriver && <div style={{ marginTop: 12 }}><Notice kind="info">Conducente ancora da decidere. Potete condividere il piano e sceglierlo dopo.</Notice></div>}
+
+        {seat.holder ? <div className={`shotgun-card${justWon ? ' won' : ''}`}><Avatar m={byId(seat.holder)!} size={36} /><span className="grow"><div className="s">Posto davanti</div><div className="t">{seat.holder === me.id ? 'È tuo: hai chiamato Shotgun' : `${name(seat.holder)} ha chiamato Shotgun`}</div></span><span className="pill shotgun"><Icon n="seat" size={14} />Shotgun</span></div>
+          : seat.canCall ? <button className="shotgun-btn" disabled={claiming} onClick={callShotgun}><Icon n="seat" size={26} /><span className="grow"><b>Shotgun!</b><span>Il posto davanti va al primo che lo chiama</span></span></button>
+          : trip.status === 'planned' && !missingDriver && !past && <p className="shotgun-free"><Icon n="seat" size={16} />Posto davanti ancora libero</p>}
 
         <div className="section">
           <div className="list">

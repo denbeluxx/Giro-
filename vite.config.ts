@@ -26,7 +26,7 @@ export default defineConfig(({ mode }) => ({
               { src: 'icon-512.png', sizes: '512x512', type: 'image/png', purpose: 'maskable' },
             ],
           },
-          workbox: { navigateFallback: 'index.html', globPatterns: ['**/*.{js,css,html,svg,png,woff2}'] },
+          workbox: { navigateFallback: 'index.html', globPatterns: ['**/*.{js,css,html,svg,png,woff2}'], importScripts: ['push-sw.js'] },
         })]),
   ],
   test: { environment: 'node', include: ['src/**/*.test.ts'] },

@@ -5,6 +5,8 @@ import type { Member } from '../lib/types'
 const P: Record<string, ReactNode> = {
   car: <><path d="M5 11l1.6-4.2A2 2 0 0 1 8.5 5.5h7a2 2 0 0 1 1.9 1.3L19 11" /><rect x="3" y="11" width="18" height="6" rx="2" /><path d="M6.5 17v1.5M17.5 17v1.5" /><circle cx="7.5" cy="14" r=".6" fill="currentColor" /><circle cx="16.5" cy="14" r=".6" fill="currentColor" /></>,
   plus: <path d="M12 5v14M5 12h14" />,
+  seat: <><path d="M8.200 3.500h3.600a2 2 0 0 1 2 1.800l.9 7.700H9.300L6.300 5.900a1.800 1.800 0 0 1 1.900-2.400z" /><path d="M6 13h11a2 2 0 0 1 2 2v1.500H6z" /><path d="M8 16.500V20M17 16.500V20" /></>,
+  bell: <><path d="M6 16.500V11a6 6 0 0 1 12 0v5.500l1.500 1.800h-15z" /><path d="M10 20.500a2 2 0 0 0 4 0" /></>,
   back: <path d="M15 5l-7 7 7 7" />,
   chev: <path d="M9 6l6 6-6 6" />,
   down: <path d="M6 9l6 6 6-6" />,

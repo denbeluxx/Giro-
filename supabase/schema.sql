@@ -324,13 +324,81 @@ revoke all on function public.create_group(text, text), public.invite_preview(te
 grant execute on function public.create_group(text, text), public.invite_preview(text), public.join_group(text, text, uuid), public.leave_group(uuid), public.regenerate_invite(uuid), public.is_member(uuid), public.my_member(uuid), public.remove_placeholder(uuid), public.set_group_toll(uuid, text, jsonb) to authenticated;
 
 -- ---------------------------------------------------------------------------
+-- Notifiche e «Shotgun!»
+-- ---------------------------------------------------------------------------
+-- Telefoni iscritti alle notifiche (una riga per dispositivo).
+create table if not exists public.push_subscriptions (
+  endpoint text primary key check (endpoint ~ '^https://' and char_length(endpoint) < 1000),
+  user_id uuid not null references auth.users(id) on delete cascade,
+  p256dh text not null check (char_length(p256dh) < 200),
+  auth text not null check (char_length(auth) < 100),
+  created_at timestamptz not null default now()
+);
+alter table public.push_subscriptions enable row level security;
+drop policy if exists push_select on public.push_subscriptions;
+drop policy if exists push_delete on public.push_subscriptions;
+create policy push_select on public.push_subscriptions for select to authenticated using (user_id = auth.uid());
+create policy push_delete on public.push_subscriptions for delete to authenticated using (user_id = auth.uid());
+revoke insert, update on public.push_subscriptions from authenticated, anon;
+
+-- Un dispositivo appartiene a chi lo ha iscritto per ultimo (stesso telefono, account diverso).
+create or replace function public.save_push(p_endpoint text, p_p256dh text, p_auth text) returns void
+language plpgsql security definer set search_path = public as $$
+begin
+  if auth.uid() is null then raise exception 'accesso richiesto'; end if;
+  insert into public.push_subscriptions(endpoint, user_id, p256dh, auth) values (p_endpoint, auth.uid(), p_p256dh, p_auth)
+  on conflict (endpoint) do update set user_id = excluded.user_id, p256dh = excluded.p256dh, auth = excluded.auth, created_at = now();
+end $$;
+
+-- Il posto davanti: lo prende il primo che chiama «Shotgun!».
+create table if not exists public.trip_shotgun (
+  trip_id uuid primary key references public.trips(id) on delete cascade,
+  group_id uuid not null references public.groups(id) on delete cascade,
+  member_id uuid not null references public.members(id) on delete cascade,
+  claimed_at timestamptz not null default now()
+);
+alter table public.trip_shotgun enable row level security;
+drop policy if exists shotgun_select on public.trip_shotgun;
+create policy shotgun_select on public.trip_shotgun for select to authenticated using (public.is_member(group_id));
+revoke insert, update, delete on public.trip_shotgun from authenticated, anon;
+
+create or replace function public.claim_shotgun(p_trip uuid) returns jsonb
+language plpgsql security definer set search_path = public as $$
+declare t record; me uuid;
+begin
+  select id, group_id, status, starts_at, data into t from public.trips where id = p_trip;
+  if not found or not public.is_member(t.group_id) then raise exception 'accesso negato'; end if;
+  me := public.my_member(t.group_id);
+  if t.status <> 'planned' then raise exception 'Shotgun vale solo per le uscite in programma.'; end if;
+  if t.starts_at < now() - interval '2 hours' then raise exception 'Troppo tardi: l''uscita è già partita.'; end if;
+  if not (t.data->'presentIds') ? me::text then raise exception 'Non sei tra i presenti di questa uscita.'; end if;
+  if exists (select 1 from jsonb_array_elements(t.data->'legs') l where l->>'driverId' = me::text) then
+    raise exception 'Guidi tu: il posto davanti lo lasci agli altri.';
+  end if;
+  -- un posto preso da chi nel frattempo non viene più o è diventato il conducente torna libero
+  delete from public.trip_shotgun s where s.trip_id = p_trip and (not (t.data->'presentIds') ? s.member_id::text
+    or exists (select 1 from jsonb_array_elements(t.data->'legs') l where l->>'driverId' = s.member_id::text));
+  insert into public.trip_shotgun(trip_id, group_id, member_id) values (p_trip, t.group_id, me) on conflict (trip_id) do nothing;
+  return (select jsonb_build_object('member_id', member_id, 'mine', member_id = me) from public.trip_shotgun where trip_id = p_trip);
+end $$;
+
+-- Dati riservati al servizio delle notifiche: chiavi e registro degli invii. Nessun accesso dall'app.
+create table if not exists public.app_secrets (name text primary key, value text not null);
+alter table public.app_secrets enable row level security;
+revoke all on public.app_secrets from authenticated, anon;
+insert into public.app_secrets(name, value) values ('cron', md5(gen_random_uuid()::text) || md5(gen_random_uuid()::text)) on conflict (name) do nothing;
+create table if not exists public.notify_log (key text primary key, at timestamptz not null default now());
+alter table public.notify_log enable row level security;
+revoke all on public.notify_log from authenticated, anon;
+
+-- ---------------------------------------------------------------------------
 -- Aggiornamenti in tempo reale tra dispositivi
 -- ---------------------------------------------------------------------------
 do $$
 declare t text;
 begin
   if exists (select 1 from pg_publication where pubname = 'supabase_realtime') then
-    foreach t in array array['groups', 'members', 'places', 'trips', 'settlements'] loop
+    foreach t in array array['groups', 'members', 'places', 'trips', 'settlements', 'trip_shotgun'] loop
       if not exists (select 1 from pg_publication_tables where pubname = 'supabase_realtime' and schemaname = 'public' and tablename = t) then
         execute format('alter publication supabase_realtime add table public.%I', t);
       end if;

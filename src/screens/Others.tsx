@@ -7,6 +7,7 @@ import { store } from '../lib/store'
 import { resetDemo, setDemoIdentity } from '../lib/store/local'
 import { TARIFF_DATE, TARIFF_SOURCE, gateName } from '../lib/tolls'
 import { nightOwl, recordTripId } from '../lib/eggs'
+import { PUSH_TEXT, disablePush, enablePush, usePush } from '../lib/push'
 import { uid, type ID, type Place, type Trip } from '../lib/types'
 import { Avatar, Btn, Empty, Icon, Seg, Sheet, Switch, useBusy, useToast, led } from '../ui/kit'
 import { PlaceSearch } from '../ui/PlaceSearch'
@@ -173,6 +174,7 @@ export function Members() {
     return `${id === me.id ? 'Hai' : 'Ha'} ancora un saldo aperto: ${km ? fmtKmSigned(km) : ''}${km && eur ? ' e ' : ''}${eur ? fmtEurSigned(eur) + ' di pedaggi' : ''}.`
   }
   const dupName = (n: string, except?: ID | null) => active.some((m) => m.id !== except && m.name.trim().replace(/\s+/g, ' ').toLowerCase() === n.trim().replace(/\s+/g, ' ').toLowerCase())
+  const [push$, setPush] = usePush()
   const copy = async () => { try { await navigator.clipboard.writeText(link); toast('Link copiato') } catch { toast('Copia non riuscita: tieni premuto sul link') } }
   return (
     <div className="screen"><Header title="Gruppo" />
@@ -206,6 +208,12 @@ export function Members() {
               <Switch on={me.homeShared && !!me.home} label="Condividi casa con il gruppo" onChange={(v) => run(async () => { await store.updateMe(data.group.id, { homeShared: v }); await reload() })} /></div>
           </div>
         </div>
+
+        {push$ && <div className="section"><div className="section-h"><h2>Notifiche</h2></div>
+          <div className="list"><div className="row"><span className="row-ic"><Icon n="bell" /></span><div className="grow"><div className="t">Notifiche su questo telefono</div><div className="s wrap">{PUSH_TEXT[push$]}</div></div>
+            {(push$ === 'on' || push$ === 'off') && <Switch on={push$ === 'on'} label="Notifiche su questo telefono" onChange={(v) => run(async () => { const s = v ? await enablePush() : await disablePush(); setPush(s); toast(s === 'on' ? 'Notifiche attive su questo telefono' : s === 'denied' ? 'Notifiche bloccate: riattivale dalle impostazioni del telefono' : 'Notifiche disattivate') })} />}</div></div>
+          {push$ === 'on' && <p className="foot">Ogni telefono si attiva a parte. Il promemoria dei viaggi da confermare arriva la mattina dopo l'uscita.</p>}
+        </div>}
 
         {store.mode === 'demo' && <div className="section"><div className="section-h"><h2>Modalità dimostrativa</h2></div>
           <p className="caption" style={{ margin: '0 6px 10px' }}>Entra come un altro membro per vedere gli stessi dati dal suo punto di vista. I dati restano su questo dispositivo.</p>
