@@ -235,14 +235,14 @@ function Auth({ invite, expired }: { invite: boolean; expired?: boolean }) {
         <form onSubmit={(e) => { e.preventDefault(); run(async () => { await store.sendCode(email.trim()); setSent(true) }) }}>
           <label className="label" htmlFor="em">La tua email</label>
           <input id="em" className="field" type="email" inputMode="email" autoComplete="email" required placeholder="nome@esempio.it" value={email} onChange={(e) => setEmail(e.target.value)} />
-          <p className="foot" style={{ marginBottom: 18 }}>Ti mandiamo un codice di accesso. Nessuna password da ricordare.</p>
+          <p className="foot" style={{ marginBottom: 18 }}>Ti mandiamo un'email per entrare. Nessuna password da ricordare.</p>
           <Btn busy={busy} disabled={!email.includes('@')}>Continua</Btn>
         </form>
       ) : (
         <form className="enter" onSubmit={(e) => { e.preventDefault(); run(() => store.verifyCode(email.trim(), code.trim())) }}>
           <label className="label" htmlFor="cd">Codice ricevuto via email</label>
           <input id="cd" className="field num" inputMode="numeric" autoComplete="one-time-code" pattern="[0-9]*" maxLength={8} required placeholder="123456" value={code} onChange={(e) => setCode(e.target.value.replace(/\D/g, ''))} style={{ fontSize: 24, letterSpacing: '0.2em', textAlign: 'center' }} autoFocus />
-          <p className="foot" style={{ marginBottom: 18 }}>Inviato a {email}. Su questo dispositivo resterai collegato.</p>
+          <p className="foot" style={{ marginBottom: 18 }}>Inviato a {email}. Se nell'email c'è un link («Sign in»), aprilo da questo dispositivo: entri senza codice. Resterai collegato.</p>
           <Btn busy={busy} disabled={code.length < 6}>Accedi</Btn>
           <div style={{ height: 8 }} /><Btn kind="gray" type="button" onClick={() => { setSent(false); setCode('') }}>Cambia email</Btn>
         </form>
