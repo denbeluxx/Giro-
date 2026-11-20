@@ -39,6 +39,7 @@ export async function enablePush(): Promise<PushState> {
   if (sub && !same) { await sub.unsubscribe().catch(() => {}); sub = null }
   if (!sub) sub = await reg.pushManager.subscribe({ userVisibleOnly: true, applicationServerKey: b64ToBytes(key) })
   await store.savePush({ endpoint: sub.endpoint, p256dh: bytesToB64(sub.getKey('p256dh')), auth: bytesToB64(sub.getKey('auth')) })
+  store.notify({ type: 'test' }).catch(() => {}) // conferma immediata sul telefono
   return 'on'
 }
 

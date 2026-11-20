@@ -98,6 +98,12 @@ Deno.serve(async (req) => {
     const uid = await callerUser(req)
     if (!uid) return json({ error: 'accesso richiesto' }, 401)
 
+    // Prova: una notifica ai propri dispositivi (al massimo una al minuto)
+    if (body.type === 'test') {
+      if (!(await once(`test:${uid}:${new Date().toISOString().slice(0, 16)}`))) return json({ sent: 0 })
+      return json({ sent: await send([uid], { title: 'Notifiche attive', body: 'Da ora ti avvisiamo di nuove uscite, Shotgun e viaggi da confermare.', url: './', tag: 'test' }) })
+    }
+
     if (body.type === 'new_trip' || body.type === 'shotgun') {
       const t = await loadTrip(String(body.tripId ?? ''))
       if (!t) return json({ error: 'uscita non trovata' }, 404)

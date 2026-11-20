@@ -212,7 +212,7 @@ export function Members() {
         {push$ && <div className="section"><div className="section-h"><h2>Notifiche</h2></div>
           <div className="list"><div className="row"><span className="row-ic"><Icon n="bell" /></span><div className="grow"><div className="t">Notifiche su questo telefono</div><div className="s wrap">{PUSH_TEXT[push$]}</div></div>
             {(push$ === 'on' || push$ === 'off') && <Switch on={push$ === 'on'} label="Notifiche su questo telefono" onChange={(v) => run(async () => { const s = v ? await enablePush() : await disablePush(); setPush(s); toast(s === 'on' ? 'Notifiche attive su questo telefono' : s === 'denied' ? 'Notifiche bloccate: riattivale dalle impostazioni del telefono' : 'Notifiche disattivate') })} />}</div></div>
-          {push$ === 'on' && <p className="foot">Ogni telefono si attiva a parte. Il promemoria dei viaggi da confermare arriva la mattina dopo l'uscita.</p>}
+          {push$ === 'on' && <p className="foot">Ogni telefono si attiva a parte. Il promemoria dei viaggi da confermare arriva la mattina dopo l'uscita. <button className="link" onClick={() => { store.notify({ type: 'test' }).catch(() => {}); toast('Notifica di prova inviata') }}>Invia una prova</button></p>}
         </div>}
 
         {store.mode === 'demo' && <div className="section"><div className="section-h"><h2>Modalità dimostrativa</h2></div>
