@@ -1,10 +1,13 @@
 import { createRoot } from 'react-dom/client'
 import { App } from './app'
-import '@fontsource/space-grotesk/latin-400.css'
-import '@fontsource/space-grotesk/latin-500.css'
-import '@fontsource/space-grotesk/latin-600.css'
-import '@fontsource/space-grotesk/latin-700.css'
+import '@fontsource/nunito/latin-400.css'
+import '@fontsource/nunito/latin-500.css'
+import '@fontsource/nunito/latin-600.css'
+import '@fontsource/nunito/latin-700.css'
+import '@fontsource/nunito/latin-800.css'
+import '@fontsource/kalam/latin-700.css'
 import './styles.css'
+import './brand.css'
 
 // L'app si chiamava «Giro»: i dati salvati sul dispositivo passano ai nomi nuovi una volta sola.
 try {

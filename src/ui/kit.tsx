@@ -37,6 +37,20 @@ export function Icon({ n, size = 22, sw = 1.9 }: { n: keyof typeof P | string; s
   return <svg width={size} height={size} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={sw} strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">{P[n]}</svg>
 }
 
+/** Il simbolo di Shotgun: il sedile davanti, visto di lato e rivolto verso destra. Pieno, prende il colore del testo.
+ *  Sotto i 34 px (simbolo alto meno di 32 px) usa il disegno per le misure piccole, con le fessure più larghe. */
+export function SeatMark({ size = 24 }: { size?: number }) {
+  return size < 34 ? (
+    <svg className="seat-mark" width={size} height={size} viewBox="-48.2 21.1 344.9 344.9" fill="currentColor" aria-hidden="true">
+      <path d="M54.2 233.6 L38.5 185.3 Q24.7 142.9 67.1 129.2 L76.5 126.1 Q118.9 112.3 132.6 154.7 L158.3 233.6 Q172.0 276.0 127.5 276.0 L112.5 276.0 Q68.0 276.0 54.2 233.6 Z" /><path d="M94.8 300.0 L146.2 300.0 Q181.2 300.0 210.8 281.5 L212.3 280.5 Q242.0 262.0 243.3 296.9 L244.8 335.2 Q246.0 364.0 217.2 364.0 L94.8 364.0 Q66.0 364.0 66.0 335.2 L66.0 328.8 Q66.0 300.0 94.8 300.0 Z" /><rect x="6.5" y="52.1" width="99.0" height="54" rx="27.0" transform="rotate(-18 56.0 79.1)" />
+    </svg>
+  ) : (
+    <svg className="seat-mark" width={size} height={size} viewBox="-36.9 40.6 325.4 325.4" fill="currentColor" aria-hidden="true">
+      <path d="M54.2 243.6 L38.5 195.3 Q24.7 152.9 67.1 139.2 L76.5 136.1 Q118.9 122.3 132.6 164.7 L158.3 243.6 Q172.0 286.0 127.5 286.0 L112.5 286.0 Q68.0 286.0 54.2 243.6 Z" /><path d="M94.8 300.0 L146.2 300.0 Q181.2 300.0 210.8 281.5 L212.3 280.5 Q242.0 262.0 243.3 296.9 L244.8 335.2 Q246.0 364.0 217.2 364.0 L94.8 364.0 Q66.0 364.0 66.0 335.2 L66.0 328.8 Q66.0 300.0 94.8 300.0 Z" /><rect x="9.6" y="71.6" width="99.0" height="54" rx="27.0" transform="rotate(-18 59.1 98.6)" />
+    </svg>
+  )
+}
+
 // colore del LED di ogni persona: niente verde, rosso o arancio, che restano per saldi e conferme
 const LEDS = ['#38e1ff', '#dfe7ff', '#ff5ad1', '#5b7cff', '#a78bff', '#ff9de6', '#8ec5ff', '#b8bec8']
 export const ledHex = (m?: Pick<Member, 'color'> | null) => LEDS[(m?.color ?? 7) % LEDS.length]

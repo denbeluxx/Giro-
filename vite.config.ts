@@ -13,17 +13,17 @@ export default defineConfig(({ mode }) => ({
       ? [viteSingleFile()]
       : [VitePWA({
           registerType: 'autoUpdate',
-          includeAssets: ['icon.svg'],
+          includeAssets: ['icon.svg', 'logo.svg'],
           manifest: {
             name: 'Shotgun', short_name: 'Shotgun', lang: 'it',
             description: 'Chilometri, turni di guida e pedaggi tra amici',
-            theme_color: '#16171A', background_color: '#16171A',
+            theme_color: '#14111D', background_color: '#14111D',
             display: 'standalone', start_url: '.', scope: '.',
             icons: [
               { src: 'icon.svg', sizes: 'any', type: 'image/svg+xml', purpose: 'any' },
               { src: 'icon-192.png', sizes: '192x192', type: 'image/png' },
               { src: 'icon-512.png', sizes: '512x512', type: 'image/png', purpose: 'any' },
-              { src: 'icon-512.png', sizes: '512x512', type: 'image/png', purpose: 'maskable' },
+              { src: 'icon-maskable-512.png', sizes: '512x512', type: 'image/png', purpose: 'maskable' },
             ],
           },
           workbox: { navigateFallback: 'index.html', globPatterns: ['**/*.{js,css,html,svg,png,woff2}'], importScripts: ['push-sw.js'] },

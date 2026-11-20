@@ -28,7 +28,7 @@ export const GUIDE_STEPS: Step[] = [
   { target: 'pedaggi', tab: 2, title: 'Pedaggi', text: 'Chi passa il casello anticipa per tutti. Qui vedi chi deve quanto a chi e registri i rimborsi con un tocco.' },
   { target: 'invita', tab: 4, title: 'Gruppo', text: 'Invita gli amici con il link, imposta la tua casa e attiva «Condividi casa con il gruppo» per il giro di raccolta, gestisci le notifiche. Da qui puoi anche rivedere questa guida.' },
   { tab: 0, title: 'Come si contano i km', text: 'Chi guida riceve i km percorsi; per ogni tratto, chi è in auto (conducente compreso) ne paga una quota uguale: chi sale dopo paga meno. Con «Non posso bere ostia» valgono doppio i primi 30 km dell\'uscita (triplo se l\'uscita è sotto i 5 km).' },
-  { tab: 0, notify: true, title: 'Shotgun!', text: 'Quando esce una nuova uscita, il primo passeggero che chiama Shotgun si prende il posto davanti. Con le notifiche attive lo sai per primo.' },
+  { tab: 0, notify: true, title: 'Shotgun!', text: 'Quando esce una nuova uscita, il primo passeggero che strappa il biglietto «Shotgun!» si prende il posto davanti: il pezzo col sedile finisce accanto al suo nome. Con le notifiche attive lo sai per primo.' },
 ]
 
 interface Box { x: number; y: number; w: number; h: number }

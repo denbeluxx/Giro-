@@ -279,7 +279,7 @@ with sync_playwright() as p:
     dur = pg.evaluate("getComputedStyle(document.querySelector('.sheet')).animationDuration")
     ok(dur in ('1e-05s', '0.00001s'), f'con «Riduci movimento» le animazioni sono disattivate ({dur})')
     tap(pg, '.sheet-h .nav-btn', 200); tap(pg, '.nav-btn:has-text("Indietro")', 300); tap(pg, '.nav .nav-btn', 300)
-    ok(pg.evaluate("getComputedStyle(document.body).backgroundColor") == 'rgb(22, 23, 26)', 'tema antracite applicato anche su dispositivo scuro')
+    ok(pg.evaluate("getComputedStyle(document.body).backgroundColor") == 'rgb(20, 17, 29)', 'tema notte applicato anche su dispositivo scuro')
     c2.close()
 
     # --- Tastiera: viewport ridotto come con tastiera aperta ---
@@ -303,12 +303,22 @@ with sync_playwright() as p:
     pg.evaluate("""() => { const d = JSON.parse(localStorage.getItem('shotgun-demo-v5')); const t = d.groups['demo-group'].trips.find((x) => x.id === 't-4'); t.startsAt = new Date(Date.now() + 86400e3).toISOString(); localStorage.setItem('shotgun-demo-v5', JSON.stringify(d)) }""")
     pg.reload(); hero(pg); tap(pg, '.banner:has-text("Bolgia")', 900)
     ok(pg.locator('.shotgun-btn').count() == 1, 'chi viene come passeggero vede il tasto «Shotgun!»')
-    tap(pg, '.shotgun-btn', 1200); shot(pg, '31-shotgun')
+    names = pg.locator('.in-car .row').all_inner_texts()
+    ok(len(names) == len([x for x in db(pg)['trips'] if x['id'] == 't-4'][0]['presentIds']) and any('Daniele' in n for n in names) and any('Guida' in n for n in names) and pg.locator('.stub-mini').count() == 0,
+       'la scheda dell\'uscita mostra chi è in auto per nome, con chi guida')
+    tap(pg, '.shotgun-btn', 1500)
+    ok(pg.locator('.ritual .rt-ticket').count() == 1 and pg.locator('.rt-hole[opacity="0"]').count() > 0, 'toccato il biglietto parte lo strappo, un foro alla volta')
+    pg.wait_for_timeout(1300)
+    ok(pg.locator('.rt-fly').count() == 1 and 'Daniele' in pg.inner_text('.rt-face.back'), 'la matrice staccata porta il nome di chi ha preso il posto')
+    pg.wait_for_timeout(2600); shot(pg, '31-shotgun')
     ok(pg.locator('.shotgun-card:has-text("È tuo")').count() == 1 and db(pg)['shotguns'].get('t-4') == 'm-daniele', 'chiamato Shotgun: il posto davanti è registrato')
+    ok(pg.locator('.ritual').count() == 0 and pg.locator('.in-car .row:has-text("Daniele") .stub-mini:not(.waiting)').count() == 1 and pg.locator('.stub-mini').count() == 1,
+       'la matrice col sedile resta accanto al nome di chi ha preso il posto davanti')
     tap(pg, '.nav-btn:has-text("Indietro")', 600); tap(pg, '.nav .nav-btn', 700)
     pg.locator('.chip:has-text("Matteo")').last.scroll_into_view_if_needed(); tap(pg, '.section:has-text("Modalità dimostrativa") .chip:has-text("Matteo")', 700)
     tab(pg, 'Saldi'); tap(pg, '.banner:has-text("Bolgia")', 900)
-    ok(pg.locator('.shotgun-btn').count() == 0 and pg.locator('.shotgun-card:has-text("Daniele ha chiamato Shotgun")').count() == 1, 'gli altri vedono chi ha preso il posto davanti, senza poterlo rubare')
+    ok(pg.locator('.shotgun-btn').count() == 0 and pg.locator('.shotgun-card:has-text("Daniele ha chiamato Shotgun")').count() == 1 and pg.locator('.in-car .row:has-text("Daniele") .stub-mini').count() == 1,
+       'gli altri vedono chi ha preso il posto davanti, senza poterlo rubare')
     tap(pg, '.nav-btn:has-text("Indietro")', 600); tap(pg, '.nav .nav-btn', 700)
     pg.locator('.chip:has-text("Filippo")').last.scroll_into_view_if_needed(); tap(pg, '.section:has-text("Modalità dimostrativa") .chip:has-text("Filippo")', 700)
     ok('dimostrativi' in pg.inner_text('.section:has-text("Notifiche")'), 'nei dati dimostrativi le notifiche sono dichiarate non disponibili')
@@ -369,13 +379,13 @@ with sync_playwright() as p:
     ok(pg.locator('.guide').count() == 0 and pg.evaluate("localStorage.getItem('shotgun-guide-done')") == '1', 'la guida si può saltare subito')
     c9.close()
 
-    # --- Colori: azzurro per le azioni, verde e rosso per confermato e annullato ---
+    # --- Colori: lilla per le azioni, verde e rosso per confermato e annullato ---
     c7 = new_ctx(b); pg = c7.new_page(); pg.goto(SIM); hero(pg)
-    ok('56, 225, 255' in pg.evaluate("getComputedStyle(document.querySelector('.cta .btn')).boxShadow"), 'il pulsante principale («Organizza uscita») ha la luce azzurra dell\'app')
+    ok('184, 156, 255' in pg.evaluate("getComputedStyle(document.querySelector('.cta .btn')).boxShadow"), 'il pulsante principale («Organizza uscita») ha il lilla dell\'app')
     tap(pg, '.banner:has-text("Conferma il viaggio")', 900)
     ok(pg.locator('.cta .btn.led-pos:has-text("Conferma viaggio")').count() == 1 and '61, 255, 138' in pg.evaluate("getComputedStyle(document.querySelector('.cta .btn.led-pos')).boxShadow"), '«Conferma viaggio» è verde')
     tap(pg, '.row:has-text("Annulla uscita")', 500)
-    ok('255, 77, 94' in pg.evaluate("getComputedStyle(document.querySelector('.sheet .btn-danger')).boxShadow"), 'il pulsante per annullare è rosso')
+    ok('255, 92, 108' in pg.evaluate("getComputedStyle(document.querySelector('.sheet .btn-danger')).boxShadow"), 'il pulsante per annullare è rosso')
     tap(pg, '.sheet .btn:has-text("Annulla uscita")', 300)
     ok(pg.locator('.toast.neg:has-text("Uscita annullata")').count() == 1, 'annullando compare un avviso rosso')
     pg.wait_for_timeout(800)

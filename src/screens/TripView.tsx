@@ -7,8 +7,10 @@ import { shareText, whatsappUrl } from '../lib/share'
 import { store } from '../lib/store'
 import { gateName, refreshTolls } from '../lib/tolls'
 import type { GroupToll, ID, Leg, Member, Trip } from '../lib/types'
-import { Avatar, Btn, Empty, Icon, Notice, Sheet, useBusy, useToast, ledHex } from '../ui/kit'
+import { Avatar, Btn, Empty, Icon, Notice, SeatMark, Sheet, useBusy, useToast, ledHex } from '../ui/kit'
 import { MapView } from '../ui/MapView'
+import { TearRitual } from '../ui/TearRitual'
+import { tick } from '../lib/haptics'
 import { KmSheet, TollSheet } from './editors'
 import { tone } from './Home'
 import { StatusPill } from './Others'
@@ -99,18 +101,42 @@ export function TripView({ id, fresh, autoShotgun }: { id: ID; fresh?: boolean; 
   const seat = trip ? frontSeat(trip, data.shotguns, me.id, Date.now(), activeIds) : { canCall: false }
   const [claiming, setClaiming] = useState(false)
   const [justWon, setJustWon] = useState(false)
-  const callShotgun = async () => {
+  // lo strappo: il rito parte al tocco, mentre il server conferma chi è arrivato primo
+  const btn$ = useRef<HTMLButtonElement>(null)
+  const [ritual, setRitual] = useState<null | { from: DOMRect; claim: Promise<boolean> }>(null)
+  const [landed, setLanded] = useState(false)
+  // preso da un altro mentre la scheda è aperta: la matrice compare accanto al suo nome con un piccolo colpo
+  const prevHolder = useRef(seat.holder)
+  const [popped, setPopped] = useState<ID | null>(null)
+  useEffect(() => {
+    if (seat.holder && seat.holder !== prevHolder.current && !justWon && !ritual) setPopped(seat.holder)
+    prevHolder.current = seat.holder
+  }, [seat.holder]) // eslint-disable-line react-hooks/exhaustive-deps
+  const won = () => { setJustWon(true); toast('Shotgun! Il posto davanti è tuo'); store.notify({ type: 'shotgun', tripId: id }).catch(() => {}) }
+  const callShotgun = () => {
     if (claiming) return
     setClaiming(true)
-    try {
-      const who = await store.claimShotgun(data.group.id, id)
-      if (who === me.id) {
-        setJustWon(true); navigator.vibrate?.([40, 30, 80])
-        toast('Shotgun! Il posto davanti è tuo')
-        store.notify({ type: 'shotgun', tripId: id }).catch(() => {})
-      } else toast(`Troppo tardi: Shotgun l'ha già chiamato ${byId(who)?.name ?? 'un altro'}`)
+    const from = btn$.current?.getBoundingClientRect()
+    const calm = window.matchMedia?.('(prefers-reduced-motion: reduce)').matches
+    const claim = store.claimShotgun(data.group.id, id).then((who) => {
+      if (who === me.id) return true
+      toast(`Troppo tardi: Shotgun l'ha già chiamato ${byId(who)?.name ?? 'un altro'}`)
+      return false
+    }, (e: any) => { toast(e?.message ?? 'Shotgun non riuscito. Riprova.'); return false })
+    if (from && from.width && !calm && typeof document.body.animate === 'function') {
+      tick(10)
+      setRitual({ from, claim })
+      return
+    }
+    claim.then(async (ok) => {
+      if (ok) { won(); tick(30) }
       await app.reload()
-    } catch (e: any) { toast(e?.message ?? 'Shotgun non riuscito. Riprova.') } finally { setClaiming(false) }
+    }).finally(() => setClaiming(false))
+  }
+  const ritualDone = async (ok: boolean) => {
+    setRitual(null)
+    if (ok) { won(); setLanded(true); tick(18) }
+    try { await app.reload() } finally { setClaiming(false) }
   }
   // aperta dal tasto «Shotgun!» della notifica: si prova una volta sola (anche se la schermata viene ricostruita)
   useEffect(() => {
@@ -126,6 +152,11 @@ export function TripView({ id, fresh, autoShotgun }: { id: ID; fresh?: boolean; 
   const fx = tripEffect(trip)
   const shown = displayRound(Object.fromEntries(fx.km))
   const present = trip.presentIds.map((p) => byId(p)).filter(Boolean) as Member[]
+  const holder = seat.holder ?? (ritual ? me.id : undefined)
+  const driverLabel = (m: ID) => {
+    const legs = trip.legs.filter((l) => l.driverId === m)
+    return !legs.length ? null : legs.length === trip.legs.length ? 'Guida' : `Guida ${legs[0].kind}`
+  }
   const editable = trip.status !== 'cancelled'
   const drivers = trip.legs.map((l) => byId(l.driverId))
   const sameDriver = drivers.every((d) => d?.id === drivers[0]?.id)
@@ -182,16 +213,30 @@ export function TripView({ id, fresh, autoShotgun }: { id: ID; fresh?: boolean; 
 
         {trip.status === 'planned' && missingDriver && <div style={{ marginTop: 12 }}><Notice kind="info">Conducente ancora da decidere. Potete condividere il piano e sceglierlo dopo.</Notice></div>}
 
-        {seat.holder ? <div className={`shotgun-card${justWon ? ' won' : ''}`}><Avatar m={byId(seat.holder)!} size={36} /><span className="grow"><div className="s">Posto davanti</div><div className="t">{seat.holder === me.id ? 'È tuo: hai chiamato Shotgun' : `${name(seat.holder)} ha chiamato Shotgun`}</div></span><span className="pill shotgun"><Icon n="seat" size={14} />Shotgun</span></div>
-          : seat.canCall ? <button className="shotgun-btn" disabled={claiming} onClick={callShotgun}><Icon n="seat" size={26} /><span className="grow"><b>Shotgun!</b><span>Il posto davanti va al primo che lo chiama</span></span></button>
-          : trip.status === 'planned' && !missingDriver && !past && <p className="shotgun-free"><Icon n="seat" size={16} />Posto davanti ancora libero</p>}
+        {seat.holder && !ritual ? <div className={`shotgun-card${justWon ? ' won' : ''}`}><Avatar m={byId(seat.holder)!} size={36} /><span className="grow"><div className="s">Posto davanti</div><div className="t">{seat.holder === me.id ? 'È tuo: hai chiamato Shotgun' : `${name(seat.holder)} ha chiamato Shotgun`}</div></span></div>
+          : seat.canCall || ritual ? <button ref={btn$} className={`shotgun-btn${ritual ? ' in-ritual' : ''}`} disabled={claiming} onClick={callShotgun}>
+              <span className="ticket-stub"><SeatMark size={36} /></span>
+              <span className="ticket-body"><b>Shotgun!</b><span>Il posto davanti va al primo che lo chiama</span></span>
+            </button>
+          : trip.status === 'planned' && !missingDriver && !past && <p className="shotgun-free"><SeatMark size={18} />Posto davanti ancora libero</p>}
+        {ritual && <TearRitual from={ritual.from} claim={ritual.claim} name={me.name} place={trip.dest.name} slot={`[data-stub-slot="${me.id}"]`} onDone={ritualDone} />}
+
+        <div className="section">
+          <div className="section-h"><h2>In auto</h2></div>
+          <div className="list in-car">{present.map((m) => (
+            <div className="row" key={m.id}><Avatar m={m} size={32} />
+              <span className="grow t">{m.name}{m.id === me.id && <span className="dim"> · tu</span>}</span>
+              {driverLabel(m.id) && <span className="pill">{driverLabel(m.id)}</span>}
+              {holder === m.id && <span className={`stub-mini${ritual ? ' waiting' : (landed && m.id === me.id) || popped === m.id ? ' landed' : ''}`} data-stub-slot={m.id} role="img" aria-label="Posto davanti"><SeatMark size={15} /></span>}
+            </div>))}</div>
+        </div>
 
         <div className="section">
           <div className="list">
             <Row label={sameDriver ? 'Conducente' : 'Conducenti'} onClick={() => editAt(1)}
               value={!drivers.some(Boolean) ? 'Da decidere' : sameDriver ? drivers[0]?.name : trip.legs.map((l, i) => `${l.kind === 'andata' ? 'Andata' : 'Ritorno'} ${drivers[i]?.name ?? 'da decidere'}`).join(' · ')} />
             <Row label="Partecipanti, data e destinazione" onClick={() => editAt(0)}
-              value={<span style={{ display: 'flex', alignItems: 'center', gap: 10 }}><span className="stack">{present.map((m) => <Avatar key={m.id} m={m} size={28} />)}</span><span className="dim" style={{ fontSize: 15 }}>{present.length} in auto</span></span>} />
+              value={`${present.length} in auto · ${trip.dest.name}`} />
             <Row label={trip.status === 'planned' && !past ? 'Km previsti' : 'Km effettivi'} onClick={unknown ? () => editAt(missingDriver ? 1 : 2) : () => setSheet('km')} value={<span className="num">{unknown ? '—' : fmtKmFine(fx.realMeters, trip)}</span>}
               sub={!unknown && trip.legs.length > 1 ? fx.legs.map((l) => `${l.kind} ${fmtKm(l.realMeters)}`).join(' · ') : unknown ? (missingDriver ? 'Si calcolano quando scegliete chi guida' : 'Manca la partenza: impostala nel percorso') : undefined}
               pill={!unknown && trip.legs.some((l) => l.routeState === 'stimato' && l.actualMeters == null) ? <span className="pill warn">Stima</span> : undefined} />
