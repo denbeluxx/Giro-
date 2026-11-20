@@ -47,10 +47,10 @@ export function KmSheet({ trip, byId, onSave, onClose }: { trip: Trip; byId: (id
           </div>
           {empty[i] && !touched[i] ? <p className="foot">Scrivi i km percorsi in questa tratta.</p>
             : touched[i] && values[i] == null ? <p className="foot" style={{ color: 'var(--danger)' }}>Scrivi un numero tra 0 e {MAX_KM}, ad esempio 12,5.</p>
-            : fx && <p className="foot num">Moltiplicatore ×{fx.legs[i].mult} → {fmtKm(fx.legs[i].weightedMeters)} validi per il saldo</p>}
+            : fx && <p className="foot num">{Number.isInteger(fx.legs[i].mult) ? `Moltiplicatore ×${fx.legs[i].mult}` : 'Doppio sui primi 30 km dell\'uscita'} → {fmtKm(fx.legs[i].weightedMeters)} validi per il saldo</p>}
         </div>
       ))}
-      <div className="list"><div className="row"><div className="grow"><div className="t">Non posso bere ostia</div><div className="s wrap">Guidi tu e non bevi: i km di tutta l'uscita valgono doppio (triplo se l'uscita è sotto i 5 km).</div></div><Switch on={flag} label="Non posso bere ostia" onChange={setFlag} /></div></div>
+      <div className="list"><div className="row"><div className="grow"><div className="t">Non posso bere ostia</div><div className="s wrap">Guidi tu e non bevi: valgono doppio i primi 30 km dell'uscita (triplo se l'uscita è sotto i 5 km).</div></div><Switch on={flag} label="Non posso bere ostia" onChange={setFlag} /></div></div>
     </Sheet>
   )
 }

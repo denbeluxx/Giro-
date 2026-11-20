@@ -239,3 +239,21 @@ describe('correzioni dal collaudo del 20/11/2026', () => {
     expect(diffs.size).toBeGreaterThan(1)
   })
 })
+
+describe('tetto al raddoppio: doppi solo i primi 30 km', () => {
+  const mk = (km: number) => trip([leg({ km: [km], designated: true, stops: [stop('s', ['B']), stop('e', [], ['B'])] } as any)])
+  it('fino a 30 km vale ×2 pieno', () => {
+    expect(tripEffect(mk(30)).weightedMeters).toBe(60000)
+    expect(tripEffect(mk(12)).legs[0].mult).toBe(2)
+  })
+  it('oltre i 30 km il bonus resta di 30 km', () => {
+    const e = tripEffect(mk(160))
+    expect(Math.round(e.weightedMeters)).toBe(190000)
+    expect(e.km.get('A')).toBe(95000) // 190 validi, metà a testa
+    expect(sum(e.km)).toBe(0)
+  })
+  it('il tetto vale sull\'intera uscita, andata più ritorno', () => {
+    const l = () => leg({ km: [20], designated: true, stops: [stop('s', ['B']), stop('e', [], ['B'])] } as any)
+    expect(Math.round(tripEffect(trip([l(), { ...l(), kind: 'ritorno' }])).weightedMeters)).toBe(70000)
+  })
+})

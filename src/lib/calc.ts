@@ -2,6 +2,8 @@ import type { ID, Leg, Member, Settlement, Toll, TollStatus, Trip } from './type
 
 /** Soglia della regola ×3: meno di 5 km con flag nella stessa uscita. A 5 km esatti vale ×2. */
 export const THRESHOLD_M = 5000
+/** Con «Non posso bere ostia» valgono doppio solo i primi 30 km dell'uscita: un viaggio lungo non sbilancia la stagione. */
+export const BONUS_CAP_M = 30000
 /** Oltre questo valore un dato è considerato corrotto e ignorato (10.000 km, 10.000 €). */
 const MAX_M = 1e7
 const MAX_CENTS = 1e6
@@ -135,7 +137,7 @@ export interface LegEffect {
   kind: Leg['kind']
   driverId: ID | null
   realMeters: number
-  mult: 1 | 2 | 3
+  mult: number // 1, 2, 3, oppure un valore intermedio quando il bonus è limitato ai primi 30 km
   weightedMeters: number
   toll: LegToll
   payerId: ID | null
@@ -158,14 +160,16 @@ export function tripEffect(trip: Trip): TripEffect {
   // La soglia dei 5 km si applica ai km come li vede l'utente (arrotondati a 0,1 km).
   const flaggedTrip = legsIn.some((l) => l.designated)
   const totalShown = Math.round(legsIn.reduce((a, l) => a + (l.driverId ? legMeters(l) : 0), 0) / 100) * 100
-  const tripMult: 1 | 2 | 3 = !flaggedTrip ? 1 : totalShown < THRESHOLD_M ? 3 : 2
+  const total = legsIn.reduce((a, l) => a + (l.driverId ? legMeters(l) : 0), 0)
+  // oltre i 30 km il bonus resta di 30 km, distribuito in proporzione su tutti i tratti
+  const tripMult = !flaggedTrip || total <= 0 ? 1 : totalShown < THRESHOLD_M ? 3 : (total + Math.min(total, BONUS_CAP_M)) / total
   const km = new Map<ID, number>()
   const eur = new Map<ID, number>()
   const add = (m: Map<ID, number>, id: ID, v: number) => m.set(id, (m.get(id) ?? 0) + v)
   const legs: LegEffect[] = []
   for (const leg of legsIn) {
     const real = legMeters(leg)
-    const mult: 1 | 2 | 3 = leg.driverId ? tripMult : 1
+    const mult = leg.driverId ? tripMult : 1
     const toll = legToll(leg)
     const payerId = leg.tollPayerId ?? leg.driverId
     legs.push({ kind: leg.kind, driverId: leg.driverId, realMeters: real, mult, weightedMeters: real * mult, toll, payerId })

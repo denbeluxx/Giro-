@@ -78,7 +78,7 @@ Servizi usati, tutti gratuiti e senza chiavi: tessere mappa CARTO su dati OpenSt
 
 ## Regole implementate
 
-- Chi guida all'andata guida anche al ritorno. Senza opzione ×1; con «Non posso bere ostia» (vale per tutta l'uscita) ×2; ×3 se l'uscita è sotto i 5 km in totale (a 5 km esatti ×2).
+- Chi guida all'andata guida anche al ritorno. Senza opzione ×1; con «Non posso bere ostia» (vale per tutta l'uscita) valgono doppio i primi 30 km dell'uscita, il resto normale; ×3 se l'uscita è sotto i 5 km in totale (a 5 km esatti ×2).
 - Per ogni tratto tra due tappe: al conducente i km ponderati, a ogni occupante (conducente compreso) una quota uguale. Chi sale o scende lungo il percorso paga solo i suoi tratti.
 - I saldi non sono salvati: sono ricalcolati ogni volta dai viaggi confermati e dai rimborsi. Modifiche e annullamenti restano quindi coerenti e la somma del gruppo è sempre zero (arrotondamento al metro e al centesimo con resto distribuito).
 - Un viaggio conta una sola volta: identificativo generato dal dispositivo (un reinvio non duplica) e numero di versione controllato dal database (una seconda conferma o una modifica superata viene rifiutata e l'app ricarica).
