@@ -7,7 +7,7 @@ create extension if not exists pgcrypto;
 create table if not exists public.groups (
   id uuid primary key default gen_random_uuid(),
   name text not null check (char_length(btrim(name)) between 1 and 60),
-  invite_code text not null unique default encode(gen_random_bytes(9), 'hex'),
+  invite_code text not null unique default substr(replace(gen_random_uuid()::text, '-', ''), 1, 18),
   settings jsonb not null default '{}'::jsonb,
   created_at timestamptz not null default now()
 );
@@ -313,7 +313,7 @@ end $$;
 -- Nuovo link di invito: il vecchio smette di funzionare.
 create or replace function public.regenerate_invite(p_group uuid) returns text
 language plpgsql security definer set search_path = public as $$
-declare c text := encode(gen_random_bytes(9), 'hex');
+declare c text := substr(replace(gen_random_uuid()::text, '-', ''), 1, 18);
 begin
   if not public.is_member(p_group) then raise exception 'accesso negato'; end if;
   update public.groups set invite_code = c where id = p_group;
