@@ -6,6 +6,7 @@ import { inviteLink, whatsappUrl } from '../lib/share'
 import { store } from '../lib/store'
 import { resetDemo, setDemoIdentity } from '../lib/store/local'
 import { TARIFF_DATE, TARIFF_SOURCE, gateName } from '../lib/tolls'
+import { nightOwl, recordTripId } from '../lib/eggs'
 import { uid, type ID, type Place, type Trip } from '../lib/types'
 import { Avatar, Btn, Empty, Icon, Seg, Sheet, Switch, useBusy, useToast, led } from '../ui/kit'
 import { PlaceSearch } from '../ui/PlaceSearch'
@@ -24,6 +25,7 @@ export function StatusPill({ t }: { t: Trip }) {
 export function History() {
   const { data, byId, push } = useApp()
   const trips = [...data.trips].sort((a, b) => (a.startsAt > b.startsAt ? -1 : 1))
+  const record = recordTripId(data.trips)
   return (
     <div className="screen"><Header title="Storico" />
       <div className="scroll">
@@ -33,7 +35,7 @@ export function History() {
             const drivers = [...new Set(t.legs.map((l) => l.driverId).filter(Boolean))].map((id) => byId(id)?.name).join(' e ')
             return (
               <button className={`row${t.status === 'cancelled' ? ' cancelled' : ''}`} key={t.id} onClick={() => push({ s: 'trip', id: t.id })}>
-                <span className="grow"><div className="t" style={{ fontWeight: 600 }}>{t.dest.name}</div><div className="s wrap">{fmtDateYear(t.startsAt)} · {drivers ? `guida ${drivers}` : 'conducente da decidere'}</div></span>
+                <span className="grow"><div className="t" style={{ fontWeight: 600 }}>{t.dest.name}</div><div className="s wrap">{fmtDateYear(t.startsAt)} · {drivers ? `guida ${drivers}` : 'conducente da decidere'}</div>{(record === t.id || (t.status !== 'cancelled' && nightOwl(t))) && <div className="egg-pills">{record === t.id && <span className="pill trophy">Record</span>}{t.status !== 'cancelled' && nightOwl(t) && <span className="pill owl">Nottambuli</span>}</div>}</span>
                 <span style={{ textAlign: 'right', flex: 'none' }}><div className="num" style={{ fontSize: 16 }}>{e.realMeters ? fmtKm(e.realMeters) : '—'}</div><div style={{ marginTop: 3 }}><StatusPill t={t} /></div></span>
                 <span className="chev"><Icon n="chev" size={18} /></span>
               </button>

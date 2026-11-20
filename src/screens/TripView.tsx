@@ -1,5 +1,6 @@
 import { useEffect, useMemo, useRef, useState } from 'react'
 import { useApp } from '../app'
+import { nightOwl, recordTripId } from '../lib/eggs'
 import { balances, displayRound, legToll, tripEffect, type TripEffect } from '../lib/calc'
 import { fmtDate, fmtDateLong, fmtEur, fmtEurSigned, fmtKm, fmtKmSigned, fmtTime } from '../lib/format'
 import { shareText, whatsappUrl } from '../lib/share'
@@ -48,6 +49,7 @@ export function Done({ trip, fx, meId, onClose }: { trip: Trip; fx: TripEffect; 
       <svg width="96" height="96" viewBox="0 0 96 96" fill="none" stroke="var(--pos)" strokeWidth="5" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true"><circle cx="48" cy="48" r="40" transform="rotate(-90 48 48)" /><path d="M31 49.5l11.5 11.5L66 37" /></svg>
       <h2 id="done-t" className="pop" style={{ fontSize: 28, fontWeight: 700, letterSpacing: '-0.02em', marginTop: 8 }}>Viaggio registrato</h2>
       <p className="pop dim num">{trip.dest.name} · {fmtKm(fx.realMeters)}</p>
+      {nightOwl(trip) && <p className="pop owl-note">Nottambuli certificati: rientro alle {nightOwl(trip)}.</p>}
       <div className="pop card" style={{ padding: '14px 22px', marginTop: 10 }}>
         <div className="caption">Variazione del tuo saldo</div>
         <div className={`num ${tone(km)}`} style={{ fontSize: 30, fontWeight: 700, letterSpacing: '-0.02em' }}>{fmtKmSigned(km)}</div>
@@ -140,7 +142,7 @@ export function TripView({ id, fresh }: { id: ID; fresh?: boolean }) {
       <div className="nav"><button className="nav-btn" onClick={pop}><Icon n="back" />Indietro</button><span className="spacer" />
         {editable && <button className="nav-btn" onClick={() => setSheet('share')} aria-label="Condividi"><Icon n="share" /></button>}</div>
       <div className="scroll has-cta">
-        <div style={{ display: 'flex', alignItems: 'center', gap: 10, marginBottom: 2 }}><StatusPill t={trip} /></div>
+        <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 2, flexWrap: 'wrap' }}><StatusPill t={trip} />{recordTripId(data.trips) === trip.id && <span className="pill trophy">Record della stagione</span>}{trip.status !== 'cancelled' && nightOwl(trip) && <span className="pill owl">Nottambuli</span>}</div>
         <h1 className="title">{trip.dest.name}</h1>
         <p className="subtitle">{fmtDateLong(trip.startsAt).replace(/^./, (c) => c.toUpperCase())} · {fmtTime(trip.startsAt)}{trip.legs[1]?.time ? ` · ritorno ${trip.legs[1].time}` : ''}</p>
 

@@ -5,6 +5,7 @@ import { fmtDur, fmtEur, fmtEurSigned, fmtKm, fmtKmSigned, fmtTime, localInput }
 import { buildStops, extraStops, homeName, newLeg, reverseStops, sanitizeStops, stopKey, usableHome, withExtras } from '../lib/plan'
 import { RouteError, estimateRoute, matrix, routeStops, type Found, type Route } from '../lib/routing'
 import { store } from '../lib/store'
+import { tiedForDriver } from '../lib/eggs'
 import { haversine } from '../lib/tolls'
 import { uid, type GroupToll, type ID, type Leg, type Member, type Pt, type Stop, type Trip } from '../lib/types'
 import { Avatar, Btn, Icon, Notice, Seg, Sheet, Skel, Switch, useBusy, useToast, led, ledHex } from '../ui/kit'
@@ -198,6 +199,49 @@ export function Plan({ mode, edit, redo, at, resume }: { mode: 'plan' | 'record'
   const recording = mode === 'record' && edit?.status !== 'planned'
   const balShown = useMemo(() => ({ ...bal, km: displayRound(bal.km) }), [bal])
   const suggestion = useMemo(() => (recording ? null : suggestDriver(active, present, unavailable, bal, fmtKmSigned)), [active, present, unavailable, bal, recording])
+  // ---- Roulette: tra chi è a pari merito sceglie la sorte (tocco o scossa del telefono) ----
+  const tied = useMemo(() => (recording ? [] : tiedForDriver(active, present, unavailable, bal)), [active, present, unavailable, bal, recording])
+  const [spinning, setSpinning] = useState<ID | null>(null)
+  const spinRef = useRef(false)
+  const spin = () => {
+    if (spinRef.current || tied.length < 2) return
+    spinRef.current = true
+    const pick = tied[Math.floor(Math.random() * tied.length)]
+    const order = [...tied]
+    const total = 14 + order.indexOf(pick) + order.length * 2
+    let i = 0
+    const tick = () => {
+      const id = order[i % order.length]
+      setSpinning(id)
+      try { navigator.vibrate?.(8) } catch { /* */ }
+      if (i >= total && id === pick) {
+        spinRef.current = false; setSpinning(null); setDriver(pick); setUndecided(false)
+        try { navigator.vibrate?.([30, 40, 60]) } catch { /* */ }
+        toast(`La roulette ha scelto ${byId(pick)?.name ?? ''}`)
+        return
+      }
+      i++
+      setTimeout(tick, 60 + Math.max(0, i - total + 8) * 35)
+    }
+    tick()
+  }
+  const askMotion = async () => {
+    const DM = (window as any).DeviceMotionEvent
+    try { if (DM && typeof DM.requestPermission === 'function') await DM.requestPermission() } catch { /* negato: resta il tocco */ }
+  }
+  useEffect(() => {
+    if (step !== 1 || tied.length < 2) return
+    let last = 0
+    const onMotion = (e: DeviceMotionEvent) => {
+      const a = e.accelerationIncludingGravity
+      if (!a) return
+      const g = Math.sqrt((a.x ?? 0) ** 2 + (a.y ?? 0) ** 2 + (a.z ?? 0) ** 2)
+      const now = Date.now()
+      if (g > 24 && now - last > 2000) { last = now; spin() }
+    }
+    window.addEventListener('devicemotion', onMotion)
+    return () => window.removeEventListener('devicemotion', onMotion)
+  }, [step, tied.join()]) // eslint-disable-line react-hooks/exhaustive-deps
   const noBase = (id: ID) => !usableHome(byId(id)) && !start
   useEffect(() => {
     if (step !== 1 || !dest) return
@@ -481,6 +525,10 @@ export function Plan({ mode, edit, redo, at, resume }: { mode: 'plan' | 'record'
         <div className="scroll has-cta" key="s1">
           <h1 className="title">{recording ? 'Chi ha guidato?' : 'Chi guida?'}</h1>
           <p className="subtitle">{recording ? (edit ? 'I saldi cambiano quando salvi le modifiche.' : 'Il saldo cambia quando registri il viaggio.') : suggestion ? `${suggestion.reason} Decidete voi.` : 'Nessuno dei presenti può guidare: salvate con «Da decidere».'}</p>
+          {tied.length >= 2 && <button className="roulette" onClick={() => { askMotion(); spin() }} disabled={!!spinning}>
+            <Icon n="repeat" size={20} />
+            <span><b>Roulette</b> · {tied.length} a pari merito: scuoti il telefono o tocca qui</span>
+          </button>}
           {!recording && presentPeople.length > 1 && <div style={{ marginTop: 14 }}>
             <p className="label">Chi non può guidare questa volta?</p>
             <div className="chips">{presentPeople.map((m) => <button key={m.id} className="chip plain" aria-pressed={unavailable.includes(m.id)} onClick={() => { const on = unavailable.includes(m.id); setUnavailable(on ? unavailable.filter((u) => u !== m.id) : [...unavailable, m.id]); if (!on && driver === m.id) setDriver(null) }}>{m.name}</button>)}</div>
@@ -497,7 +545,7 @@ export function Plan({ mode, edit, redo, at, resume }: { mode: 'plan' | 'record'
             {presentPeople.map((m) => {
               const off = unavailable.includes(m.id)
               return (
-                <button key={m.id} role="radio" aria-checked={driver === m.id && !undecided} disabled={off} className={`driver${off ? ' off' : ''}`} style={led(m)} onClick={() => { setDriver(m.id); setUndecided(false) }}>
+                <button key={m.id} role="radio" aria-checked={driver === m.id && !undecided} disabled={off} className={`driver${off ? ' off' : ''}${spinning === m.id ? ' spin' : ''}`} style={led(m)} onClick={() => { setDriver(m.id); setUndecided(false) }}>
                   <Avatar m={m} size={44} />
                   <span style={{ flex: 1, minWidth: 0 }}>
                     <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}><span style={{ fontWeight: 600 }}>{m.name}</span>{suggestion?.id === m.id && <span className="pill accent">Suggerito</span>}</div>
