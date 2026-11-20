@@ -1,11 +1,10 @@
 import { buildStops, newLeg, reverseStops } from '../plan'
 import { estimateRoute } from '../routing'
-import { pairKey } from '../tolls'
 import { uid, type Group, type GroupData, type ID, type Leg, type Member, type Place, type Trip } from '../types'
 import { sanitizeTrips } from '../validate'
 import { ConflictError, type Store } from './types'
 
-const KEY = 'giro-demo-v4'
+const KEY = 'giro-demo-v5'
 interface G { group: Group; members: Member[]; places: Place[]; trips: Trip[]; settlements: GroupData['settlements'] }
 interface DB { groups: Record<ID, G> }
 
@@ -52,11 +51,10 @@ function seed(): DB {
     { id: 'p-navigli', name: 'Navigli', address: 'Ripa di Porta Ticinese, Milano', lat: 45.4523, lng: 9.1746, kind: 'locale' },
     { id: 'p-malp', name: 'Parcheggio Malpensata', address: 'Via Carnovali, Bergamo', lat: 45.6853, lng: 9.6726, kind: 'ritrovo' },
   ]
-  const tolls = { [pairKey('seriate', 'milano-est')]: { cents: 440, by: 'm-daniele', on: day(-30) }, [pairKey('bergamo', 'milano-est')]: { cents: 380, by: 'm-matteo', on: day(-30) } }
   const trip = (id: string, when: string, status: Trip['status'], driver: ID, present: ID[], place: Place, designated = false): Trip => {
     const go = newLeg('andata', driver, buildStops('andata', members, present, driver, place))
     const back = newLeg('ritorno', driver, reverseStops(go.stops))
-    const legs: Leg[] = [go, back].map((l) => { const r = estimateRoute(l.stops, tolls, true); return { ...l, designated, time: l.kind === 'andata' ? '21:30' : '02:00', segs: r.segs, geometry: r.geometry, routeState: 'ok' } })
+    const legs: Leg[] = [go, back].map((l) => { const r = estimateRoute(l.stops, undefined, true); return { ...l, designated, time: l.kind === 'andata' ? '21:30' : '02:00', segs: r.segs, geometry: r.geometry, routeState: 'ok' } })
     return { id, groupId: gid, status, version: 1, startsAt: when, dest: { name: place.name, lat: place.lat, lng: place.lng, address: place.address }, presentIds: present, unavailableIds: [], legs, createdBy: driver, updatedBy: driver, updatedAt: when, confirmedAt: status === 'confirmed' ? when : null }
   }
   const trips = [
@@ -65,7 +63,7 @@ function seed(): DB {
     trip('t-3', day(-9), 'confirmed', 'm-alessia', ['m-daniele', 'm-alessia', 'm-filippo'], places[1], true),
     trip('t-4', day(-1), 'planned', 'm-filippo', ['m-daniele', 'm-matteo', 'm-filippo', 'm-andrea'], places[0]),
   ]
-  return { groups: { [gid]: { group: { id: gid, name: 'Amici', inviteCode: 'demo1234', settings: { tolls } }, members, places, trips, settlements: [] } } }
+  return { groups: { [gid]: { group: { id: gid, name: 'Amici', inviteCode: 'demo1234', settings: {} }, members, places, trips, settlements: [] } } }
 }
 
 const wait = (ms = 220) => new Promise((r) => setTimeout(r, ms))
@@ -138,6 +136,7 @@ export const localStore: Store = {
   async savePlace(groupId, p) { const db = read(); const g = db.groups[groupId]; const i = g.places.findIndex((x) => x.id === p.id); if (i >= 0) g.places[i] = p; else g.places.push(p); write(db) },
   async deletePlace(groupId, id) { const db = read(); const g = db.groups[groupId]; g.places = g.places.filter((p) => p.id !== id); write(db) },
   async addMember(groupId, name) { const db = read(); const g = db.groups[groupId]; g.members.push({ id: uid(), groupId, userId: null, name, color: g.members.length % 8, home: null, homeShared: false, joinedAt: new Date().toISOString(), leftAt: null }); write(db) },
+  async renameGroup(groupId, name) { const db = read(); const n = name.trim().slice(0, 40); if (!n) throw new Error('Scrivi un nome per il gruppo.'); db.groups[groupId].group.name = n; write(db) },
   async renameMember(groupId, id, name) { const db = read(); const m = db.groups[groupId].members.find((x) => x.id === id && !x.userId); if (!m) throw new Error('Questo membro ha già un account: può cambiare nome solo lui.'); m.name = name; write(db) },
   async removeMember(groupId, id) { const db = read(); const m = db.groups[groupId].members.find((x) => x.id === id && !x.userId); if (!m) throw new Error('Si possono togliere solo i membri senza account'); m.leftAt = new Date().toISOString(); write(db) },
   async updateMe(groupId, patch) { const db = read(); const g = db.groups[groupId]; const m = g.members.find((x) => x.id === meOf(g))!; Object.assign(m, patch); write(db) },

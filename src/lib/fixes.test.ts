@@ -2,7 +2,7 @@ import { describe, expect, it } from 'vitest'
 import { displayRound, legToll, settleUp, suggestDriver, tripEffect, zeroSumRound } from './calc'
 import { kmField, parseNum } from './format'
 import { bestOrder, buildStops } from './plan'
-import { A4_GATES, analyzeOsrmLeg, haversine, refreshTolls } from './tolls'
+import { haversine, refreshTolls } from './tolls'
 import type { Leg, Member, Stop, Toll, Trip } from './types'
 
 const NO: Toll = { status: 'none', cents: 0 }
@@ -49,17 +49,6 @@ describe('giro delle case', () => {
 })
 
 describe('pedaggi', () => {
-  const g = (id: string) => A4_GATES.find((x) => x.id === id)!
-  const step = (ref: string, a: { lat: number; lng: number }, b: { lat: number; lng: number }, distance: number) => ({ ref, distance, intersections: [{ location: [a.lng, a.lat] as [number, number], classes: ['toll'] }, { location: [b.lng, b.lat] as [number, number], classes: ['toll'] }] })
-  it('uscita oltre Brescia Ovest: fuori copertura, non Seriate→Brescia Ovest', () => {
-    const beyond = { lat: g('brescia-ovest').lat - 0.01, lng: g('brescia-ovest').lng + 0.05 }
-    const t = analyzeOsrmLeg({ distance: 1, duration: 1, steps: [step('A4', g('seriate'), beyond, 36200 + 6700)] }, { 'brescia-ovest|seriate': { cents: 520, by: 'A', on: '2026-11-01' } })
-    expect(t.status).toBe('out')
-  })
-  it('riconosce «A 4» e la sola «E64»', () => {
-    expect(analyzeOsrmLeg({ distance: 1, duration: 1, steps: [step('A 4', g('seriate'), g('milano-est'), 40700)] }).road).toBe('A4')
-    expect(analyzeOsrmLeg({ distance: 1, duration: 1, steps: [step('E64', g('seriate'), g('milano-est'), 40700)] }).road).toBe('A4')
-  })
   it('tratta mista: importo noto + parte da inserire, e i saldi addebitano solo il noto', () => {
     const l = leg({ km: [20, 10], stops: [stop('s', ['B']), stop('p'), stop('e', [], ['B'])], tolls: [{ status: 'ok', cents: 250, road: 'A4' }, { status: 'out', cents: null, road: 'A58' }] })
     const t = legToll(l)
@@ -72,10 +61,10 @@ describe('pedaggi', () => {
     expect(e.eur.get('C')).toBe(-100) // metà dei 600 € sul secondo tratto, diviso in tre
     expect(sum(e.eur)).toBe(0)
   })
-  it('le tariffe confermate dopo il salvataggio aggiornano le uscite in programma', () => {
+  it('le uscite in programma salvate senza importo si riallineano alla tabella ufficiale', () => {
     const l = leg({ km: [40], stops: [stop('s'), stop('e')], tolls: [{ status: 'verify', cents: null, road: 'A4', from: 'dalmine', to: 'capriate' }] })
-    const [r] = refreshTolls([l], { 'capriate|dalmine': { cents: 190, by: 'A', on: '2026-11-01' } })
-    expect(r.segs![0].toll).toMatchObject({ status: 'ok', cents: 190 })
+    const [r] = refreshTolls([l])
+    expect(r.segs![0].toll).toMatchObject({ status: 'ok', cents: 70 })
   })
 })
 

@@ -51,7 +51,7 @@ export interface Seg { meters: number; seconds: number; toll: Toll }
 export interface Leg {
   kind: 'andata' | 'ritorno'
   driverId: ID | null
-  designated: boolean // flag «Conducente designato»
+  designated: boolean // opzione «Non posso bere ostia»: vale per tutta l'uscita
   time?: string // "21:30"
   stops: Stop[]
   segs: Seg[] | null

@@ -24,7 +24,7 @@ def hero(pg):
 
 def shot(pg, name): pg.screenshot(path=f'{OUT}/{name}.png')
 def tap(pg, sel, wait=450): pg.click(sel); pg.wait_for_timeout(wait)
-def db(pg): return json.loads(pg.evaluate("localStorage.getItem('giro-demo-v4')"))['groups']['demo-group']
+def db(pg): return json.loads(pg.evaluate("localStorage.getItem('giro-demo-v5')"))['groups']['demo-group']
 
 def new_ctx(b, **kw):
     return b.new_context(viewport={'width': 390, 'height': 844}, device_scale_factor=2, is_mobile=True, has_touch=True, locale='it-IT', timezone_id='Europe/Rome', **kw)
@@ -120,11 +120,19 @@ with sync_playwright() as p:
     # --- A4 coperta: pedaggio compilato da solo ---
     plan_to(pg, 'Navigli', driver='Matteo', only=['Daniele', 'Matteo'])
     tap(pg, 'button:has-text("Continua")', 1600); pg.wait_for_selector('.stats b')
-    ok('Pedaggio 4,40 €' in norm(pg.inner_text('.stats')), 'tratta A4 coperta: importo compilato senza digitare nulla')
+    ok('Pedaggio 4,30 €' in norm(pg.inner_text('.stats')), 'tratta A4 Seriate–Milano Est: tariffa ufficiale compilata senza digitare nulla')
     shot(pg, '14-pedaggio-a4')
     tap(pg, '.grab', 500)
     tap(pg, 'button:has-text("Pedaggio e pagante")', 500); shot(pg, '15-pedaggio-dettaglio')
     ok(pg.locator('.sheet select').first.input_value() == 'seriate', 'caselli riconosciuti e correggibili')
+    ok('Ricorda' not in pg.inner_text('.sheet') and 'verificare' not in pg.inner_text('.sheet'), 'pedaggio A4 certo: nessuna conferma richiesta')
+    tap(pg, '.sheet-h .nav-btn', 400)
+    ok(pg.locator('button:has-text("Guida al ritorno")').count() == 0 and pg.locator('[role=switch][aria-label="Non posso bere ostia"]').count() == 1, 'un solo conducente per andata e ritorno; opzione «Non posso bere ostia» unica')
+    tap(pg, '[role=switch][aria-label="Non posso bere ostia"]', 300)
+    d = pg.evaluate("JSON.parse(localStorage.getItem(Object.keys(localStorage).find(k => k.startsWith('giro-draft-'))) || '{}')")
+    ok(len(d.get('legs', [])) == 2 and all(l['designated'] for l in d['legs']) and len({l['driverId'] for l in d['legs']}) == 1, 'opzione e conducente valgono per andata e ritorno')
+    tap(pg, '[role=switch][aria-label="Non posso bere ostia"]', 300)
+    tap(pg, 'button:has-text("Pedaggio e pagante")', 400)
     tap(pg, '.sheet-h .nav-btn', 400)
     leave_flow(pg)
 
@@ -140,8 +148,9 @@ with sync_playwright() as p:
     tap(pg, 'button:has-text("Continua")', 1600); pg.wait_for_selector('.stats b')
     tap(pg, '.grab', 500)
     tap(pg, 'button:has-text("Correggi i chilometri")', 500)
-    for i in (0, 1):
-        pg.fill(f'#km-{i}', '2'); tap(pg, f'.sheet [role=switch] >> nth={i}', 200)
+    for i in (0, 1): pg.fill(f'#km-{i}', '2')
+    ok(pg.locator('.sheet [role=switch]').count() == 1, 'un solo interruttore «Non posso bere ostia» per tutta l\'uscita')
+    tap(pg, '.sheet [role=switch]', 200)
     foot = ' '.join(pg.locator('.sheet .foot').all_inner_texts())
     foot = norm(foot); ok(foot.count('×3') == 2 and foot.count('6,0 km') == 2, '2 + 2 km con flag: ×3, 12 km validi')
     pg.fill('#km-0', '4,9'); pg.fill('#km-1', '0')
@@ -229,6 +238,14 @@ with sync_playwright() as p:
     box = pg.locator('.cta .btn').bounding_box()
     ok(box['y'] + box['height'] <= 480, 'con la tastiera aperta ricerca e pulsante principale restano raggiungibili')
     shot(pg, '27-tastiera'); c3.close()
+
+    # --- Nome del gruppo modificabile ---
+    c4 = b.new_context(viewport={'width': 390, 'height': 844}, device_scale_factor=2, is_mobile=True, has_touch=True, locale='it-IT'); pg = c4.new_page(); pg.goto(SIM)
+    hero(pg); tap(pg, 'button:has(h1.title)', 600); tap(pg, '.row:has-text("Nome del gruppo")', 400)
+    pg.fill('.sheet input', 'Compagnia del giro'); tap(pg, '.sheet .btn:has-text("Salva nome")', 700)
+    pg.go_back(); pg.wait_for_selector('.hero .big')
+    ok(pg.inner_text('h1.title') == 'Compagnia del giro' and db(pg)['group']['name'] == 'Compagnia del giro', 'il nome del gruppo si può cambiare')
+    c4.close()
 
     # --- Build reale senza rete: il routing fallisce, i dati restano ---
     c4 = new_ctx(b); pg = c4.new_page(); pg.goto(REAL); hero(pg)

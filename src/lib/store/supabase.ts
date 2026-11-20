@@ -116,6 +116,7 @@ export function supabaseStore(url: string, key: string): Store {
     async savePlace(groupId, p) { must(await sb.from('places').upsert({ id: p.id, group_id: groupId, name: p.name, address: p.address ?? null, lat: p.lat, lng: p.lng, kind: p.kind }).select()) },
     async deletePlace(_g, id) { must(await sb.from('places').delete().eq('id', id).select()) },
     async addMember(groupId, name) { must(await sb.from('members').insert({ group_id: groupId, name, color: Math.floor(Math.random() * 8) }).select()) },
+    async renameGroup(groupId, name) { const n = name.trim().slice(0, 40); if (!n) throw new Error('Scrivi un nome per il gruppo.'); const r = must(await sb.from('groups').update({ name: n }).eq('id', groupId).select('id')) as any[]; if (!r.length) throw new Error('Non è stato possibile rinominare il gruppo.') },
     async renameMember(_g, id, name) { const r = must(await sb.from('members').update({ name }).eq('id', id).is('user_id', null).select()) as any[]; if (!r.length) throw new Error('Questo membro ha già un account: può cambiare nome solo lui.') },
     async removeMember(_g, id) { must(await sb.rpc('remove_placeholder', { p_member: id })) },
     async updateMe(groupId, patch) {

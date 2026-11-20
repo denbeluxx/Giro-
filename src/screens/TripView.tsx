@@ -149,7 +149,7 @@ export function TripView({ id, fresh }: { id: ID; fresh?: boolean }) {
               sub={!unknown && trip.legs.length > 1 ? fx.legs.map((l) => `${l.kind} ${fmtKm(l.realMeters)}`).join(' · ') : unknown ? (missingDriver ? 'Si calcolano quando scegliete chi guida' : 'Manca la partenza: impostala nel percorso') : undefined}
               pill={!unknown && trip.legs.some((l) => l.routeState === 'stimato' && l.actualMeters == null) ? <span className="pill warn">Stima</span> : undefined} />
             {!unknown && (fx.weightedMeters !== fx.realMeters || trip.legs.some((l) => l.designated)) && <Row label="Validi per il saldo" onClick={() => setSheet('km')} value={<span className="num">{fmtKm(fx.weightedMeters)}</span>}
-              sub={fx.legs.map((l) => `×${l.mult}${fx.legs.length > 1 ? ` ${l.kind}` : ''}`).join(' · ') + (trip.legs.some((l) => l.designated) ? ' · conducente designato' : '')} />}
+              sub={fx.legs.map((l) => `×${l.mult}${fx.legs.length > 1 ? ` ${l.kind}` : ''}`).join(' · ') + (trip.legs.some((l) => l.designated) ? ' · non posso bere ostia' : '')} />}
             <Row label="Pedaggio" onClick={unknown ? undefined : () => setSheet('toll')}
               value={<span className="num">{unknown ? '—' : worst?.status === 'out' && !tollTotal ? 'Fuori copertura' : worst?.status === 'verify' && !tollTotal ? 'Da verificare' : tollTotal ? `${fmtEur(tollTotal)}${unpriced ? ' + da inserire' : ''}` : 'Nessun pedaggio'}</span>}
               sub={unknown ? undefined : [tolls$.filter((t) => t.from).map((t) => `${gateName(t.from)} → ${gateName(t.to)}`).join(' · '), payers && `paga ${payers}`, !tollTotal && worst?.note].filter(Boolean).join(' · ') || undefined}

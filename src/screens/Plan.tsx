@@ -225,16 +225,14 @@ export function Plan({ mode, edit, redo, at, resume }: { mode: 'plan' | 'record'
     const goStops = !dv ? [] : same ? redo!.legs[0].stops.map((s) => ({ ...s, id: uid() })) : withExtras('andata', buildStops('andata', data.members, pr, dv, ds, st), goExtras)
     const go: Leg = { ...newLeg('andata', dv, goStops), designated: prevGo?.designated ?? redo?.legs[0]?.designated ?? false }
     if (!opts.hasReturn) return [go]
+    // chi guida all'andata guida anche al ritorno, e «Non posso bere ostia» vale per tutta l'uscita
     const srcBack = prevBack ?? redo?.legs[1]
-    const wantBack = srcBack?.driverId && srcBack.driverId !== (prevGo ?? redo?.legs[0])?.driverId ? srcBack.driverId : null
-    const backDriver = wantBack && pr.includes(wantBack) && !unavailable.includes(wantBack) ? wantBack : dv
     let backStops: Stop[] = []
-    if (backDriver) {
-      if (same && redo!.legs[1] && redo!.legs[1].driverId === backDriver) backStops = redo!.legs[1].stops.map((s) => ({ ...s, id: uid() }))
-      else if (backDriver === dv) backStops = withExtras('ritorno', reverseStops(goStops), prevBack ? extraStops(prevBack.stops).filter((x) => !goExtras.some((g) => stopKey(g) === stopKey(x))) : [])
-      else backStops = withExtras('ritorno', buildStops('ritorno', data.members, pr, backDriver, ds), prevBack ? extraStops(prevBack.stops) : [])
+    if (dv) {
+      if (same && redo!.legs[1] && redo!.legs[1].driverId === dv) backStops = redo!.legs[1].stops.map((s) => ({ ...s, id: uid() }))
+      else backStops = withExtras('ritorno', reverseStops(goStops), prevBack ? extraStops(prevBack.stops).filter((x) => !goExtras.some((g) => stopKey(g) === stopKey(x))) : [])
     }
-    return [go, { ...newLeg('ritorno', backDriver, backStops), designated: srcBack?.designated ?? go.designated, time: prevBack?.time ?? srcBack?.time }]
+    return [go, { ...newLeg('ritorno', dv, backStops), designated: go.designated, time: prevBack?.time ?? srcBack?.time }]
   }
   function rebuild(over: Partial<{ dest: Named; start: Named | null; hasReturn: boolean }> = {}) {
     const ds = over.dest ?? dest
@@ -605,9 +603,8 @@ export function Plan({ mode, edit, redo, at, resume }: { mode: 'plan' | 'record'
                 : <label className="row"><span className="grow t">Orario del ritorno</span><input type="time" className="num field-inline" aria-label="Orario del ritorno" value={leg.time ?? ''} onChange={(e) => setLeg('ritorno', (l) => ({ ...l, time: e.target.value || undefined }))} /></label>}
               {leg.kind === 'andata' && <button className="row" onClick={() => setSheet({ k: 'start' })}><span className="grow t">Partenza</span><span className="v">{start ? start.name : leg.stops.length < 2 ? 'Da scegliere' : usableHome(byId(driver)) ? 'Casa del conducente' : leg.stops[0].name}</span><span className="chev"><Icon n="chev" size={18} /></span></button>}
               {leg.kind === 'andata' && <button className="row" onClick={() => goTo(1)}><span className="grow t">Conducente</span><span className="v">{byId(driver)?.name ?? 'Da decidere'}</span><span className="chev"><Icon n="chev" size={18} /></span></button>}
-              {leg.kind === 'ritorno' && <button className="row" onClick={() => setSheet({ k: 'retDriver' })}><span className="grow t">Guida al ritorno</span><span className="v">{byId(leg.driverId)?.name ?? 'Da decidere'}</span><span className="chev"><Icon n="chev" size={18} /></span></button>}
-              <div className="row"><div className="grow"><div className="t">Conducente designato</div><div className="s wrap">Km di questa tratta ×2; ×3 se in tutta l'uscita guida meno di 5 km con questa opzione.</div></div><Switch on={leg.designated} label="Conducente designato" onChange={(v) => setLeg(leg.kind, (l) => ({ ...l, designated: v }))} /></div>
-              {leg.kind === 'ritorno' && legs[0].stops.length > 1 && leg.driverId === legs[0].driverId && <button className="row" onClick={() => { setStops('ritorno', reverseStops(legs[0].stops)); toast('Ritorno con le tappe dell\'andata al contrario') }}><span className="grow t link-t">Usa le tappe dell'andata al contrario</span></button>}
+              <div className="row"><div className="grow"><div className="t">Non posso bere ostia</div><div className="s wrap">Guidi tu e non bevi: i km di tutta l'uscita valgono doppio (triplo se l'uscita è sotto i 5 km).</div></div><Switch on={legs.some((l) => l.designated)} label="Non posso bere ostia" onChange={(v) => setLegs((ls) => ls.map((l) => ({ ...l, designated: v })))} /></div>
+              {leg.kind === 'ritorno' && legs[0].stops.length > 1 && <button className="row" onClick={() => { setStops('ritorno', reverseStops(legs[0].stops)); toast('Ritorno con le tappe dell\'andata al contrario') }}><span className="grow t link-t">Usa le tappe dell'andata al contrario</span></button>}
               {leg.stops.length >= 2 && <button className="row" onClick={() => setSheet({ k: 'km' })}><span className="grow t">Correggi i chilometri</span><span className="chev"><Icon n="chev" size={18} /></span></button>}
               {leg.segs && <button className="row" onClick={() => setSheet({ k: 'toll' })}><span className="grow t">Pedaggio e pagante</span><span className="chev"><Icon n="chev" size={18} /></span></button>}
             </div>
@@ -682,22 +679,6 @@ export function Plan({ mode, edit, redo, at, resume }: { mode: 'plan' | 'record'
             </div>
           </PlaceSearch>
           <p className="foot">{leg.kind === 'andata' ? 'La tappa viene inserita prima dell\'arrivo' : 'La tappa viene inserita dopo la partenza'}{leg.stops.length < 2 ? (leg.kind === 'andata' ? ' (o come partenza, se manca)' : ' (o come arrivo, se manca)') : ''}. Poi la puoi spostare.</p>
-        </Sheet>
-      )}
-      {sheet?.k === 'retDriver' && (
-        <Sheet title="Chi guida al ritorno" onClose={() => setSheet(null)}>
-          <div role="radiogroup">{presentPeople.map((m) => {
-            const off = unavailable.includes(m.id)
-            return (
-              <button key={m.id} role="radio" disabled={off} aria-checked={legs[1]?.driverId === m.id} className={`driver${off ? ' off' : ''}`} style={led(m)} onClick={() => {
-                setLeg('ritorno', (l) => {
-                  const stops = m.id === legs[0].driverId ? reverseStops(legs[0].stops) : withExtras('ritorno', buildStops('ritorno', data.members, present, m.id, dest!), extraStops(l.stops))
-                  return { ...newLeg('ritorno', m.id, stops), designated: l.designated, time: l.time }
-                }); setSheet(null)
-              }}><Avatar m={m} size={40} /><span style={{ flex: 1 }}><div style={{ fontWeight: 500 }}>{m.name}</div><div className="s num">{off ? 'Non disponibile' : <>Saldo <span className={tone(balShown.km[m.id] ?? 0)}>{fmtKmSigned(balShown.km[m.id] ?? 0)}</span></>}</div></span><span className="radio"><Icon n="check" size={15} sw={3} /></span></button>
-            )
-          })}</div>
-          <p className="foot">Con un conducente diverso il ritorno finisce a casa sua; la soglia dei 5 km vale per ciascuno.</p>
         </Sheet>
       )}
       {sheet?.k === 'km' && <KmSheet trip={draft()} byId={byId} onClose={() => setSheet(null)} onSave={(l) => { setLegs(withEstimates(l)); setSheet(null) }} />}

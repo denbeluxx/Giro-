@@ -38,6 +38,7 @@ export interface Store {
   deletePlace(groupId: ID, id: ID): Promise<void>
   addMember(groupId: ID, name: string): Promise<void>
   /** Solo per i membri aggiunti a mano, senza account. */
+  renameGroup(groupId: ID, name: string): Promise<void>
   renameMember(groupId: ID, id: ID, name: string): Promise<void>
   removeMember(groupId: ID, id: ID): Promise<void>
   updateMe(groupId: ID, patch: { name?: string; home?: Member['home']; homeShared?: boolean }): Promise<void>

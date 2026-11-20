@@ -5,7 +5,7 @@ import { fmtDate, fmtDateYear, fmtEur, fmtEurSigned, fmtKm, fmtKmSigned, parseNu
 import { inviteLink, whatsappUrl } from '../lib/share'
 import { store } from '../lib/store'
 import { resetDemo, setDemoIdentity } from '../lib/store/local'
-import { gateName } from '../lib/tolls'
+import { TARIFF_DATE, TARIFF_SOURCE, gateName } from '../lib/tolls'
 import { uid, type ID, type Place, type Trip } from '../lib/types'
 import { Avatar, Btn, Empty, Icon, Seg, Sheet, Switch, useBusy, useToast, led } from '../ui/kit'
 import { PlaceSearch } from '../ui/PlaceSearch'
@@ -132,15 +132,13 @@ export function Money() {
               <button className="nav-btn" style={{ color: 'var(--danger)' }} aria-label="Elimina rimborso" onClick={() => setAsk({ title: 'Eliminare il rimborso?', text: `${byId(s.from)?.name} → ${byId(s.to)?.name}, ${fmtEur(s.cents)}. I saldi in euro tornano come prima del rimborso.`, ok: 'Elimina rimborso', run: async () => { await store.deleteSettlement(data.group.id, s.id); await reload(); toast('Rimborso eliminato') } })}><Icon n="trash" size={20} /></button></div>
           ))}</div></div>}
 
-        <div className="section"><div className="section-h"><h2>Tariffe A4 confermate</h2></div>
-          {!tolls.length ? <p className="caption" style={{ margin: '0 6px' }}>Quando confermate l'importo di una tratta, l'app lo ricorda e lo compila da sola le volte successive.</p> : (
+        {tolls.length > 0 && <div className="section"><div className="section-h"><h2>Tariffe scritte dal gruppo</h2></div>
             <div className="list">{tolls.map(([k, t]) => { const [a, b] = k.split('|'); return (
-              <div className="row" key={k}><div className="grow"><div className="t">{gateName(a)} ⇄ {gateName(b)}</div><div className="s">Classe A · confermata da {byId(t.by)?.name ?? 'un membro'} il {fmtDate(t.on)}</div></div><span className="v num">{fmtEur(t.cents)}</span>
-                <button className="nav-btn" style={{ color: 'var(--danger)' }} aria-label="Rimuovi tariffa" onClick={() => setAsk({ title: 'Rimuovere la tariffa?', text: `${gateName(a)} ⇄ ${gateName(b)}, ${fmtEur(t.cents)}. Le prossime volte l'importo andrà verificato di nuovo.`, ok: 'Rimuovi tariffa', run: async () => { await store.setGroupToll(data.group.id, k, null); await reload() } })}><Icon n="trash" size={20} /></button></div>
+              <div className="row" key={k}><div className="grow"><div className="t">{gateName(a)} ⇄ {gateName(b)}</div><div className="s">Classe A · scritta da {byId(t.by)?.name ?? 'un membro'} il {fmtDate(t.on)}</div></div><span className="v num">{fmtEur(t.cents)}</span>
+                <button className="nav-btn" style={{ color: 'var(--danger)' }} aria-label="Rimuovi tariffa" onClick={() => setAsk({ title: 'Rimuovere la tariffa?', text: `${gateName(a)} ⇄ ${gateName(b)}, ${fmtEur(t.cents)}. Tornerà a valere la tariffa ufficiale.`, ok: 'Rimuovi tariffa', run: async () => { await store.setGroupToll(data.group.id, k, null); await reload() } })}><Icon n="trash" size={20} /></button></div>
             ) })}</div>
-          )}
-          <p className="foot">Copertura: A4 tra Milano Est e Brescia Ovest. A35 e altre autostrade sono segnalate «fuori copertura» e si inseriscono a mano.</p>
-        </div>
+</div>}
+        <p className="foot" style={{ marginTop: 18 }}>I pedaggi dell'A4 tra Milano Est e Brescia Est si calcolano da soli con le tariffe ufficiali (classe A, {TARIFF_SOURCE}, aggiornate al {TARIFF_DATE.split('-').reverse().join('/')}). A35 e altre autostrade si scrivono a mano.</p>
       </div>
       {pay && <Sheet title="Rimborso" onClose={() => setPay(null)} footer={<>{!pay.to && <p className="cta-hint">Scegli a chi va il rimborso.</p>}<Btn busy={busy} disabled={!pay.to || pay.from === pay.to || !amountOk} onClick={save}>Registra rimborso</Btn></>}>
         <p className="label">Chi paga</p>
@@ -160,7 +158,7 @@ export function Money() {
 export function Members() {
   const { data, me, active, bal, reload, groups, switchGroup, signOut } = useApp()
   const toast = useToast()
-  const [sheet, setSheet] = useState<null | 'add' | 'home' | 'homeOff' | 'leave' | 'name' | 'invite' | 'member' | 'memberOff'>(null)
+  const [sheet, setSheet] = useState<null | 'add' | 'home' | 'homeOff' | 'leave' | 'name' | 'invite' | 'member' | 'memberOff' | 'group'>(null)
   const [editing, setEditing] = useState<ID | null>(null)
   const [name, setName] = useState('')
   const [busy, run] = useBusy()
@@ -177,6 +175,7 @@ export function Members() {
   return (
     <div className="screen"><Header title={data.group.name} />
       <div className="scroll">
+        <div className="list" style={{ marginBottom: 14 }}><button className="row" onClick={() => { setName(data.group.name); setSheet('group') }}><span className="grow t">Nome del gruppo</span><span className="v">{data.group.name}</span><span className="chev"><Icon n="chev" size={18} /></span></button></div>
         <div className="card" style={{ padding: 16 }}>
           <div style={{ fontWeight: 600, marginBottom: 4 }}>Invita gli amici</div>
           <p className="caption" style={{ marginBottom: 12 }}>Chi apre il link entra nel gruppo con saldo zero. Il gruppo è privato: lo vede solo chi ne fa parte, quindi condividi il link solo con gli amici.</p>
@@ -239,6 +238,9 @@ export function Members() {
         <p className="foot">Quando aprirà l'invito potrà collegarsi a questo nome. Se lo togli, i viaggi a cui ha partecipato restano nello storico.</p></Sheet>}
       {sheet === 'memberOff' && editing && <Sheet title={`Togliere ${byIdM(editing)?.name} dal gruppo?`} onClose={() => setSheet('member')} footer={<><Btn busy={busy} className="btn-danger" onClick={() => run(async () => { await store.removeMember(data.group.id, editing); await reload(); setSheet(null); toast('Membro tolto dal gruppo: resta nello storico') })}>Togli dal gruppo</Btn><div style={{ height: 8 }} /><Btn kind="gray" onClick={() => setSheet('member')}>Annulla</Btn></>}>
         <p style={{ margin: '0 4px', lineHeight: 1.4 }}>{balNote(editing)} I viaggi a cui ha partecipato restano nello storico.</p></Sheet>}
+      {sheet === 'group' && <Sheet title="Nome del gruppo" onClose={() => setSheet(null)} footer={<Btn busy={busy} disabled={!name.trim() || name.trim() === data.group.name} onClick={() => run(async () => { await store.renameGroup(data.group.id, name.trim()); await reload(); setSheet(null); toast('Gruppo rinominato') })}>Salva nome</Btn>}>
+        <input className="field" aria-label="Nome del gruppo" value={name} onChange={(e) => setName(e.target.value)} maxLength={40} />
+        <p className="foot">Lo vedono tutti i membri.</p></Sheet>}
       {sheet === 'invite' && <Sheet title="Nuovo link di invito" onClose={() => setSheet(null)} footer={<><Btn busy={busy} onClick={() => run(async () => { await store.regenerateInvite(data.group.id); await reload(); setSheet(null); toast('Nuovo link pronto: il vecchio non funziona più') })}>Crea nuovo link</Btn><div style={{ height: 8 }} /><Btn kind="gray" onClick={() => setSheet(null)}>Annulla</Btn></>}>
         <p style={{ margin: '0 4px', lineHeight: 1.4 }}>Il link attuale smette di funzionare. Chi è già nel gruppo resta dentro. Utile se il link è finito nelle mani sbagliate.</p></Sheet>}
       {sheet === 'leave' && <Sheet title="Lasciare il gruppo?" onClose={() => setSheet(null)} footer={<><Btn busy={busy} className="btn-danger" onClick={() => run(async () => { await store.leaveGroup(data.group.id); window.location.reload() })}>Lascia il gruppo</Btn><div style={{ height: 8 }} /><Btn kind="gray" onClick={() => setSheet(null)}>Resta nel gruppo</Btn></>}>

@@ -66,18 +66,19 @@ Servizi usati, tutti gratuiti e senza chiavi: tessere mappa CARTO su dati OpenSt
 
 **Come funziona.** Dal percorso OSRM l'app legge i tratti a pagamento e l'autostrada. Sull'A4 individua casello di entrata e di uscita, cerca l'importo e lo attribuisce al conducente, diviso tra gli occupanti del tratto. Andata e ritorno sono calcolati separatamente.
 
-**Caselli coperti** (14, classe A): Milano Est, Agrate, Cavenago-Cambiago, Trezzo, Capriate, Dalmine, Bergamo, Seriate, Grumello-Telgate, Ponte Oglio, Palazzolo, Rovato, Ospitaletto, Brescia Ovest. Progressive chilometriche dalla tabella svincoli dell'A4 (verificate il 16/11/2026); le **coordinate sono approssimate** e vanno controllate al primo uso reale: il casello resta correggibile a mano.
+**Caselli coperti** (16, classe A): Milano Est, Agrate, Cavenago-Cambiago, Trezzo, Capriate, Dalmine, Bergamo, Seriate, Grumello-Telgate, Ponte Oglio, Palazzolo, Rovato, Ospitaletto, Brescia Ovest, Brescia Centro, Brescia Est.
 
-**Tariffe: nessuna è verificata da fonte ufficiale.**
-- Autostrade per l'Italia offre un calcolatore sul sito, ma non un servizio o un file integrabile.
-- In tabella (`src/lib/tolls.ts`) c'è un solo importo, **indicativo**: Bergamo ⇄ Milano Est 3,80 €, da calcolopercorso.it (non ufficiale), letto il 16/11/2026. Un'altra fonte non ufficiale riporta cifre diverse per tratte simili, quindi l'app lo precompila ma lo segnala «da verificare».
-- La soluzione adottata: la prima volta che percorrete una tratta confermate l'importo dalla ricevuta o dal Telepass; con «Ricorda per il gruppo» l'app lo salva e da lì in poi **lo compila da sola, senza digitare nulla**. L'elenco è in *Pedaggi → Tariffe A4 confermate*.
+**Tariffe ufficiali, calcolo automatico.**
+- In tabella (`src/lib/tolls.ts`) ci sono tutte le 120 coppie di caselli, lette il 20/11/2026 dal calcolatore ufficiale <https://www.infoviaggiando.it/pedaggi> (classe A). L'importo è compilato da solo e risulta certo: non c'è nulla da confermare.
+- Riconoscimento: l'app legge dal percorso i tratti con sigla A4 e prende come caselli il punto in cui si entra e quello in cui si esce (posizioni delle rampe da OpenStreetMap). A ovest di Agrate vale la barriera di Milano Est. Il router pubblico non segnala i tratti a pagamento, quindi conta la sigla della strada.
+- Le tariffe autostradali cambiano di solito a gennaio: quando succede va riletta la tabella (data in `TARIFF_DATE`). Nel frattempo un importo scritto a mano su un viaggio vale per quel viaggio.
+- Tangenziali di Milano (A50, A51, A52) considerate senza pedaggio nei collegamenti con l'A4.
 
 **Stati mostrati:** «Nessun pedaggio», importo compilato, «Da verificare», «Fuori copertura». A35 BreBeMi e ogni altra autostrada a pagamento risultano fuori copertura: l'importo si inserisce a mano.
 
 ## Regole implementate
 
-- Senza flag ×1; tratta con «Conducente designato» ×2; ×3 se quella persona guida meno di 5 km con il flag nell'intera uscita (a 5 km esatti ×2). La soglia somma andata e ritorno, anche dopo mezzanotte, e vale per ciascun conducente.
+- Chi guida all'andata guida anche al ritorno. Senza opzione ×1; con «Non posso bere ostia» (vale per tutta l'uscita) ×2; ×3 se l'uscita è sotto i 5 km in totale (a 5 km esatti ×2).
 - Per ogni tratto tra due tappe: al conducente i km ponderati, a ogni occupante (conducente compreso) una quota uguale. Chi sale o scende lungo il percorso paga solo i suoi tratti.
 - I saldi non sono salvati: sono ricalcolati ogni volta dai viaggi confermati e dai rimborsi. Modifiche e annullamenti restano quindi coerenti e la somma del gruppo è sempre zero (arrotondamento al metro e al centesimo con resto distribuito).
 - Un viaggio conta una sola volta: identificativo generato dal dispositivo (un reinvio non duplica) e numero di versione controllato dal database (una seconda conferma o una modifica superata viene rifiutata e l'app ricarica).

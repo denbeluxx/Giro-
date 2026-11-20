@@ -38,7 +38,7 @@ function simToll(a: Stop | (Pt & { name?: string }), b: Stop | (Pt & { name?: st
   if (haversine(a, b) < 25000) return { status: 'none', cents: 0 }
   const near = (p: Pt) => A4_GATES.map((g) => ({ g, d: haversine(p, g) })).sort((x, y) => x.d - y.d)[0]
   const f = near(a), t = near(b)
-  if (f.d > 16000 || t.d > 16000 || f.g.id === t.g.id) return { status: 'none', cents: 0 }
+  if (f.d > 22000 || t.d > 22000 || f.g.id === t.g.id) return { status: 'none', cents: 0 }
   return a4Toll(f.g.id, t.g.id, tolls)
 }
 
@@ -47,7 +47,7 @@ function estimateToll(a: Pt, b: Pt, tolls: Tolls): Toll {
   if (haversine(a, b) < 25000) return { status: 'none', cents: 0 }
   const near = (p: Pt) => A4_GATES.map((g) => ({ g, d: haversine(p, g) })).sort((x, y) => x.d - y.d)[0]
   const f = near(a), t = near(b)
-  if (f.d < 16000 && t.d < 16000 && f.g.id !== t.g.id) {
+  if (f.d < 22000 && t.d < 22000 && f.g.id !== t.g.id) {
     const guess = a4Toll(f.g.id, t.g.id, tolls)
     return { ...guess, status: 'verify', estimate: true, note: 'Distanza stimata: controlla caselli e importo' }
   }

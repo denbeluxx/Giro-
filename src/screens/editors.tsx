@@ -24,16 +24,16 @@ export function KmSheet({ trip, byId, onSave, onClose }: { trip: Trip; byId: (id
   const empty = trip.legs.map((l) => !l.segs && l.actualMeters == null)
   const [km, setKm] = useState(trip.legs.map((l, i) => (empty[i] ? '' : kmField(legMeters(l)))))
   const [touched, setTouched] = useState(trip.legs.map(() => false))
-  const [flag, setFlag] = useState(trip.legs.map((l) => l.designated))
+  const [flag, setFlag] = useState(trip.legs.some((l) => l.designated))
   const values = km.map((k) => parseNum(k, MAX_KM))
   const build = (): Leg[] => trip.legs.map((l, i) => {
     // un campo non toccato lascia i km esattamente come sono (nessun arrotondamento);
     // per una distanza stimata, «Fatto» vale come conferma della stima
-    if (!touched[i] && !empty[i]) return { ...l, designated: flag[i], actualMeters: l.routeState === 'stimato' && l.actualMeters == null ? Math.round(legMeters(l)) : l.actualMeters }
+    if (!touched[i] && !empty[i]) return { ...l, designated: flag, actualMeters: l.routeState === 'stimato' && l.actualMeters == null ? Math.round(legMeters(l)) : l.actualMeters }
     const meters = Math.round(values[i]! * 1000)
     const route = l.segs ? l.segs.reduce((a, s) => a + s.meters, 0) : 0
     const same = l.routeState === 'ok' && meters === route
-    return { ...l, designated: flag[i], actualMeters: same ? null : meters }
+    return { ...l, designated: flag, actualMeters: same ? null : meters }
   })
   const bad = values.some((v, i) => (touched[i] || empty[i]) && v == null)
   const fx = bad ? null : tripEffect({ ...trip, legs: build() })
@@ -44,13 +44,13 @@ export function KmSheet({ trip, byId, onSave, onClose }: { trip: Trip; byId: (id
           <label className="label" htmlFor={`km-${i}`} style={{ display: 'block' }}>{LEG[l.kind]}{l.driverId ? ` · guida ${byId(l.driverId)?.name}` : ''}</label>
           <div className="list">
             <div className="row"><span className="grow t">Km effettivi</span><input id={`km-${i}`} className="num" inputMode="decimal" value={km[i]} aria-invalid={touched[i] && values[i] == null} onChange={(e) => { setKm(km.map((k, j) => (j === i ? e.target.value : k))); setTouched(touched.map((t, j) => t || j === i)) }} style={numInput} /><span className="dim">km</span></div>
-            <div className="row"><div className="grow"><div className="t">Conducente designato</div><div className="s wrap">Km ×2; ×3 se in tutta l'uscita questa persona guida meno di 5 km con questa opzione.</div></div><Switch on={flag[i]} label={`Conducente designato, ${LEG[l.kind]}`} onChange={(v) => setFlag(flag.map((f, j) => (j === i ? v : f)))} /></div>
           </div>
           {empty[i] && !touched[i] ? <p className="foot">Scrivi i km percorsi in questa tratta.</p>
             : touched[i] && values[i] == null ? <p className="foot" style={{ color: 'var(--danger)' }}>Scrivi un numero tra 0 e {MAX_KM}, ad esempio 12,5.</p>
             : fx && <p className="foot num">Moltiplicatore ×{fx.legs[i].mult} → {fmtKm(fx.legs[i].weightedMeters)} validi per il saldo</p>}
         </div>
       ))}
+      <div className="list"><div className="row"><div className="grow"><div className="t">Non posso bere ostia</div><div className="s wrap">Guidi tu e non bevi: i km di tutta l'uscita valgono doppio (triplo se l'uscita è sotto i 5 km).</div></div><Switch on={flag} label="Non posso bere ostia" onChange={setFlag} /></div></div>
     </Sheet>
   )
 }
@@ -72,7 +72,7 @@ export function TollSheet({ trip, people, groupTolls, meId, onSave, onClose }: {
 
   const typeAmount = (i: number, v: string) => {
     setSt((prev) => prev.map((s, j) => {
-      if (j === i) return { ...s, amount: v, touched: true, mirror: false, remember: !!(s.from && s.to && s.from !== s.to && s.t.status !== 'ok') }
+      if (j === i) return { ...s, amount: v, touched: true, mirror: false, remember: false }
       // stessa coppia di caselli nell'altra tratta, non ancora scritta a mano: segue l'importo, tasto per tasto
       const me = prev[i]
       const samePair = me.from && s.from && pairKey(me.from, me.to) === pairKey(s.from, s.to)
@@ -110,14 +110,13 @@ export function TollSheet({ trip, people, groupTolls, meId, onSave, onClose }: {
           <div key={l.kind} style={{ marginBottom: 20 }}>
             {trip.legs.length > 1 && <p className="label">{LEG[l.kind]}</p>}
             {s.t.status === 'out' && <div className="mb12"><Notice>{s.t.note ?? 'Fuori copertura'}. Scrivi l'importo totale della tratta, se lo conosci.</Notice></div>}
-            {s.t.status === 'verify' && !s.touched && <div className="mb12"><Notice>{s.t.note ?? 'Importo da verificare'}. {s.t.cents != null ? 'Controlla la cifra; con «Ricorda per il gruppo» la prossima volta si compila da sola.' : 'Scrivi l\'importo, se lo conosci.'}</Notice></div>}
+            {s.t.status === 'verify' && !s.touched && <div className="mb12"><Notice>{s.t.note ?? 'Importo da verificare'}. {s.t.cents != null ? 'Controlla caselli e cifra.' : 'Scegli i caselli o scrivi l\'importo.'}</Notice></div>}
             <div className="list">
               <div className="row"><label className="grow t" htmlFor={`tl-${i}`}>Importo</label><input id={`tl-${i}`} className="num" inputMode="decimal" placeholder={s.t.status === 'none' ? '0,00' : '—'} value={s.amount} aria-invalid={s.touched && s.amount !== '' && values[i] == null} onChange={(e) => typeAmount(i, e.target.value)} style={numInput} /><span className="dim">€</span></div>
               {a4 && <div className="row gates">
                 <label className="gate"><span className="gate-l">Entrata A4</span><select value={s.from} onChange={(e) => pick(i, e.target.value, s.to)}><option value="">—</option>{A4_GATES.map((g) => <option key={g.id} value={g.id}>{g.name.split('-')[0]}</option>)}</select></label>
                 <label className="gate"><span className="gate-l">Uscita A4</span><select value={s.to} onChange={(e) => pick(i, s.from, e.target.value)}><option value="">—</option>{A4_GATES.map((g) => <option key={g.id} value={g.id}>{g.name.split('-')[0]}</option>)}</select></label>
               </div>}
-              {a4 && s.from && s.to && s.from !== s.to && <div className="row"><div className="grow"><div className="t">Ricorda per il gruppo</div><div className="s wrap">{gateName(s.from)} ⇄ {gateName(s.to)}: la prossima volta l'importo si compila da solo.</div></div><Switch on={s.remember} label="Ricorda questa tariffa per il gruppo" onChange={(v) => set(i, { remember: v })} /></div>}
             </div>
             {s.touched && s.amount !== '' && values[i] == null && <p className="foot" style={{ color: 'var(--danger)' }}>Scrivi un importo tra 0 e {MAX_EUR} €, ad esempio 4,40.</p>}
             {s.mirror && <p className="foot">Stessi caselli: proposto lo stesso importo dell'altra tratta.</p>}

@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest'
 import { balances, settleUp, suggestDriver, tripEffect } from './calc'
-import { A4_GATES, analyzeOsrmLeg, pairKey } from './tolls'
+import { A4_GATES, TARIFFS, a4Toll, analyzeOsrmLeg, pairKey } from './tolls'
 import type { Leg, Member, Stop, Toll, Trip } from './types'
 
 const NO: Toll = { status: 'none', cents: 0 }
@@ -130,47 +130,81 @@ describe('pedaggi e rimborsi', () => {
 
 describe('riconoscimento pedaggi dal percorso', () => {
   const g = (id: string) => A4_GATES.find((x) => x.id === id)!
-  const step = (ref: string, from: { lat: number; lng: number }, to: { lat: number; lng: number }, distance: number, toll = true) => ({
-    ref, distance, intersections: [{ location: [from.lng, from.lat] as [number, number], classes: toll ? ['toll', 'motorway'] : [] }, { location: [to.lng, to.lat] as [number, number], classes: toll ? ['toll', 'motorway'] : [] }],
-  })
-  const city = { ref: '', distance: 4000, intersections: [{ location: [9.72, 45.69] as [number, number] }] }
+  type P = { lat: number; lng: number }
+  const st = (ref: string, at: P, distance: number) => ({ ref, distance, maneuver: { location: [at.lng, at.lat] as [number, number] }, intersections: [{ location: [at.lng, at.lat] as [number, number] }] })
+  // percorso tipo: città → A4 da `from` a `to` → città (OSRM pubblico non segnala i tratti a pagamento: conta la sigla)
+  const viaA4 = (from: P, to: P, ref = 'A4', km = 30) => [st('', { lat: from.lat + 0.02, lng: from.lng }, 3000), st(ref, from, km * 1000), st('', to, 2500)]
   it('nessun pedaggio', () => {
-    expect(analyzeOsrmLeg({ distance: 4000, duration: 400, steps: [city] }).status).toBe('none')
+    expect(analyzeOsrmLeg({ distance: 4000, duration: 400, steps: [st('', { lat: 45.69, lng: 9.72 }, 4000)] }).status).toBe('none')
   })
-  it('A4 coperta con tariffa confermata: importo compilato da solo', () => {
-    const steps = [city, step('A4; E64', g('seriate'), g('milano-est'), 40700), city]
-    const t = analyzeOsrmLeg({ distance: 50000, duration: 2400, steps }, { [pairKey('seriate', 'milano-est')]: { cents: 440, by: 'A', on: '2026-11-01' } })
-    expect(t).toMatchObject({ status: 'ok', cents: 440, from: 'seriate', to: 'milano-est', road: 'A4' })
+  it('A4: importo ufficiale compilato da solo, senza conferme', () => {
+    const t = analyzeOsrmLeg({ distance: 50000, duration: 2400, steps: viaA4(g('seriate'), g('milano-est'), 'A4; E64') })
+    expect(t).toMatchObject({ status: 'ok', cents: 430, from: 'seriate', to: 'milano-est', road: 'A4' })
+    expect(analyzeOsrmLeg({ distance: 1, duration: 1, steps: viaA4(g('bergamo'), g('milano-est')) })).toMatchObject({ status: 'ok', cents: 380 })
+    expect(analyzeOsrmLeg({ distance: 1, duration: 1, steps: viaA4(g('dalmine'), g('rovato')) })).toMatchObject({ status: 'ok', cents: 280, from: 'dalmine', to: 'rovato' })
   })
-  it('A4 con tariffa solo indicativa o assente: da verificare', () => {
-    const t1 = analyzeOsrmLeg({ distance: 1, duration: 1, steps: [step('A4', g('bergamo'), g('milano-est'), 34100)] })
-    expect(t1).toMatchObject({ status: 'verify', cents: 380 })
-    const t2 = analyzeOsrmLeg({ distance: 1, duration: 1, steps: [step('A4', g('dalmine'), g('rovato'), 33600)] })
-    expect(t2).toMatchObject({ status: 'verify', cents: null, from: 'dalmine', to: 'rovato' })
+  it('tabella completa e simmetrica: 120 coppie', () => {
+    expect(Object.keys(TARIFFS)).toHaveLength(120)
+    expect(TARIFFS[pairKey('brescia-est', 'milano-est')]).toBe(820)
+    expect(TARIFFS[pairKey('ponte-oglio', 'palazzolo')]).toBe(20)
+    expect(a4Toll('bergamo', 'seriate').cents).toBe(a4Toll('seriate', 'bergamo').cents)
   })
-  it('distingue caselli vicini usando la lunghezza del tratto', () => {
-    const near = { lat: (g('ponte-oglio').lat + g('palazzolo').lat) / 2, lng: (g('ponte-oglio').lng + g('palazzolo').lng) / 2 }
-    const t = analyzeOsrmLeg({ distance: 1, duration: 1, steps: [step('A4', g('bergamo'), near, 20700)] })
-    expect(t.to).toBe('palazzolo')
+  it('uscita verso la tangenziale o Milano città: vale la barriera di Milano Est', () => {
+    const t = analyzeOsrmLeg({ distance: 1, duration: 1, steps: [st('A4', { lat: 45.6689, lng: 9.6653 }, 27587), st('', { lat: 45.5681, lng: 9.3483 }, 1835), st('A51', { lat: 45.56, lng: 9.33 }, 14000)] })
+    expect(t).toMatchObject({ status: 'ok', cents: 380, from: 'bergamo', to: 'milano-est' })
+    const far = analyzeOsrmLeg({ distance: 1, duration: 1, steps: viaA4({ lat: 45.6558, lng: 9.7468 }, { lat: 45.5350, lng: 9.1602 }) })
+    expect(far).toMatchObject({ status: 'ok', cents: 430, to: 'milano-est' })
   })
-  it('A35 BreBeMi: fuori copertura', () => {
-    const t = analyzeOsrmLeg({ distance: 1, duration: 1, steps: [step('A35', { lat: 45.5, lng: 9.6 }, { lat: 45.52, lng: 10.0 }, 30000)] })
-    expect(t).toMatchObject({ status: 'out', road: 'A35' })
+  it('solo il tratto urbano a ovest della barriera: nessun pedaggio', () => {
+    expect(analyzeOsrmLeg({ distance: 1, duration: 1, steps: viaA4({ lat: 45.5552, lng: 9.2622 }, { lat: 45.5423, lng: 9.1783 }) }).status).toBe('none')
+  })
+  it('distingue caselli vicini (Ponte Oglio e Palazzolo distano 2 km)', () => {
+    expect(analyzeOsrmLeg({ distance: 1, duration: 1, steps: viaA4({ lat: 45.6689, lng: 9.6653 }, { lat: 45.6174, lng: 9.9242 }) }).to).toBe('palazzolo')
+    expect(analyzeOsrmLeg({ distance: 1, duration: 1, steps: viaA4({ lat: 45.6689, lng: 9.6653 }, { lat: 45.6247, lng: 9.8927 }) }).to).toBe('ponte-oglio')
+  })
+  it('A4 spezzata in più passi con una rampa breve in mezzo: un solo tratto', () => {
+    const steps = [st('A4', g('seriate'), 12000), st('', g('dalmine'), 200), st('A4', g('dalmine'), 20000), st('', g('agrate'), 900)]
+    expect(analyzeOsrmLeg({ distance: 1, duration: 1, steps })).toMatchObject({ status: 'ok', cents: 270, from: 'seriate', to: 'agrate' })
+  })
+  it('due ingressi distinti sull\'A4: somma dei due biglietti', () => {
+    const steps = [st('A4', g('seriate'), 8000), st('', g('bergamo'), 5000), st('A4', g('dalmine'), 9000), st('', g('capriate'), 900)]
+    expect(analyzeOsrmLeg({ distance: 1, duration: 1, steps })).toMatchObject({ status: 'ok', cents: 60 + 70 })
+  })
+  it('A35 BreBeMi e A4 oltre Brescia Est: fuori copertura; tangenziali di Milano: gratis', () => {
+    expect(analyzeOsrmLeg({ distance: 1, duration: 1, steps: [st('A35', { lat: 45.5, lng: 9.6 }, 30000), st('', { lat: 45.52, lng: 10.0 }, 500)] })).toMatchObject({ status: 'out', road: 'A35' })
+    expect(analyzeOsrmLeg({ distance: 1, duration: 1, steps: viaA4(g('seriate'), { lat: 45.45, lng: 10.52 }) })).toMatchObject({ status: 'out', road: 'A4' })
+    expect(analyzeOsrmLeg({ distance: 1, duration: 1, steps: [st('A51', { lat: 45.5, lng: 9.27 }, 9000), st('', { lat: 45.47, lng: 9.26 }, 500)] }).status).toBe('none')
+  })
+  it('una tariffa scritta dal gruppo vale solo se più recente della tabella', () => {
+    const k = pairKey('seriate', 'milano-est')
+    expect(a4Toll('seriate', 'milano-est', { [k]: { cents: 999, by: 'A', on: '2026-11-01' } }).cents).toBe(430)
+    expect(a4Toll('seriate', 'milano-est', { [k]: { cents: 450, by: 'A', on: '2027-01-02T10:00:00Z' } }).cents).toBe(450)
   })
 })
 
-describe('suggerimento del conducente', () => {
-  const ms = [member('A', '2026-01-01'), member('B', '2026-01-02'), member('C', '2026-01-03')]
-  it('saldo più basso tra i presenti disponibili', () => {
-    const s = suggestDriver(ms, ['A', 'B', 'C'], [], { km: { A: 5000, B: -8000, C: -2000 }, eur: {}, lastDrove: {} }, fmt)!
-    expect(s.id).toBe('B')
-    expect(suggestDriver(ms, ['A', 'B', 'C'], ['B'], { km: { A: 5000, B: -8000, C: -2000 }, eur: {}, lastDrove: {} }, fmt)!.id).toBe('C')
-    expect(suggestDriver(ms, ['A', 'C'], [], { km: { A: 5000, B: -8000, C: -2000 }, eur: {}, lastDrove: {} }, fmt)!.id).toBe('C')
+describe('pedaggi su percorsi reali (risposte di OSRM del 20/11/2026: sigla, metri, lng, lat di ogni passo)', () => {
+  type S = [string, number, number, number]
+  const leg = (s: S[]) => ({ distance: 1, duration: 1, steps: s.map(([ref, distance, lng, lat]) => ({ ref, distance, maneuver: { location: [lng, lat] as [number, number] }, intersections: [{ location: [lng, lat] as [number, number] }] })) })
+  it('Seriate → Navigli (entra a Bergamo, esce sulla Tangenziale Est): 3,80 €', () => {
+    const t = analyzeOsrmLeg(leg([['', 494, 9.7173, 45.685], ['', 794, 9.6785, 45.6824], ['A4', 27587, 9.6653, 45.6689], ['', 1835, 9.3483, 45.5681], ['A51', 14248, 9.3322, 45.5598], ['', 437, 9.2509, 45.4644]]))
+    expect(t).toMatchObject({ status: 'ok', cents: 380, from: 'bergamo', to: 'milano-est' })
   })
-  it('a parità: chi non ha mai guidato, poi chi non guida da più tempo, poi ordine stabile', () => {
-    const km = { A: 0, B: 0, C: 0 }
-    expect(suggestDriver(ms, ['A', 'B', 'C'], [], { km, eur: {}, lastDrove: { A: '2026-10-01', B: '2026-09-01' } }, fmt)!.id).toBe('C')
-    expect(suggestDriver(ms, ['A', 'B', 'C'], [], { km, eur: {}, lastDrove: { A: '2026-10-01', B: '2026-09-01', C: '2026-11-01' } }, fmt)!.id).toBe('B')
-    expect(suggestDriver(ms, ['A', 'B', 'C'], [], { km, eur: {}, lastDrove: {} }, fmt)!.id).toBe('A')
+  it('Navigli → Seriate (A51, A52, poi A4 fino a Bergamo): 3,80 €', () => {
+    const t = analyzeOsrmLeg(leg([['A51', 6014, 9.2522, 45.4679], ['A52', 3517, 9.2614, 45.5201], ['', 673, 9.2645, 45.5511], ['', 581, 9.2701, 45.5553], ['A4', 32850, 9.2767, 45.5572], ['', 1453, 9.6608, 45.6662], ['', 792, 9.6709, 45.6776]]))
+    expect(t).toMatchObject({ status: 'ok', cents: 380, from: 'milano-est', to: 'bergamo' })
+  })
+  it('Bergamo → Brescia (esce a Brescia Ovest): 3,50 €', () => {
+    expect(analyzeOsrmLeg(leg([['', 856, 9.6688, 45.6729], ['A4', 42309, 9.6724, 45.6695], ['', 897, 10.1659, 45.525], ['', 1399, 10.1712, 45.5311]]))).toMatchObject({ status: 'ok', cents: 350, to: 'brescia-ovest' })
+  })
+  it('Dalmine → Agrate: 1,80 €; Alzano → Rovato: 2,40 €', () => {
+    expect(analyzeOsrmLeg(leg([['SS470dir', 1497, 9.6143, 45.6568], ['', 632, 9.6195, 45.6455], ['A4', 21407, 9.6153, 45.6413], ['', 412, 9.3628, 45.5702]]))).toMatchObject({ status: 'ok', cents: 180, from: 'dalmine', to: 'agrate' })
+    expect(analyzeOsrmLeg(leg([['', 856, 9.6688, 45.6729], ['A4', 28248, 9.6724, 45.6695], ['', 723, 10.0047, 45.5775]]))).toMatchObject({ status: 'ok', cents: 240, from: 'bergamo', to: 'rovato' })
+  })
+  it('strade statali senza autostrada: nessun pedaggio', () => {
+    expect(analyzeOsrmLeg(leg([['SPexSS498', 875, 9.7532, 45.6418], ['SS573', 3137, 9.7761, 45.6198], ['SPBS573', 1549, 9.8494, 45.5999]])).status).toBe('none')
+  })
+  it('Seriate → Verona: A4 oltre Brescia Est, fuori copertura; Brescia → Milano via BreBeMi: fuori copertura', () => {
+    expect(analyzeOsrmLeg(leg([['', 464, 9.7475, 45.6538], ['A4', 100572, 9.753, 45.6545], ['', 1130, 10.9646, 45.3975]]))).toMatchObject({ status: 'out', road: 'A4' })
+    expect(analyzeOsrmLeg(leg([['A4', 3469, 10.164, 45.5261], ['A35', 55227, 10.1272, 45.5434], ['A58', 1302, 9.4407, 45.5123], ['SP103', 15540, 9.4343, 45.5158]]))).toMatchObject({ status: 'out', road: 'A35' })
   })
 })
