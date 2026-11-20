@@ -26,6 +26,19 @@ def shot(pg, name): pg.screenshot(path=f'{OUT}/{name}.png')
 def tap(pg, sel, wait=450): pg.click(sel); pg.wait_for_timeout(wait)
 def db(pg): return json.loads(pg.evaluate("localStorage.getItem('shotgun-demo-v5')"))['groups']['demo-group']
 
+CUR = '.page:not([aria-hidden])'
+def tab(pg, name, wait=800): tap(pg, f'.tabbar [role=tab]:has-text("{name}")', wait)
+def active_tab(pg): return pg.inner_text('.tabbar [role=tab][aria-selected=true]')
+def swipe(pg, dx, y=520):
+    """Scorrimento vero col dito (eventi touch), come sul telefono."""
+    cdp = pg.context.new_cdp_session(pg)
+    w = pg.viewport_size['width']; x0 = w * 0.8 if dx < 0 else w * 0.2
+    cdp.send('Input.dispatchTouchEvent', {'type': 'touchStart', 'touchPoints': [{'x': x0, 'y': y}]})
+    for i in range(1, 13):
+        cdp.send('Input.dispatchTouchEvent', {'type': 'touchMove', 'touchPoints': [{'x': x0 + dx * i / 12, 'y': y}]}); pg.wait_for_timeout(16)
+    cdp.send('Input.dispatchTouchEvent', {'type': 'touchEnd', 'touchPoints': []})
+    pg.wait_for_timeout(1000)
+
 def new_ctx(b, **kw):
     return b.new_context(viewport={'width': 390, 'height': 844}, device_scale_factor=2, is_mobile=True, has_touch=True, locale='it-IT', timezone_id='Europe/Rome', **kw)
 
@@ -177,34 +190,38 @@ with sync_playwright() as p:
     ok(abs(h2 - (h1 + d2)) < 0.11, 'registrazione diretta: saldo aggiornato')
 
     # --- Storico, modifica, annullamento ---
-    tap(pg, '.tile:has-text("Storico")', 700); shot(pg, '18-storico')
+    tab(pg, 'Storico'); shot(pg, '18-storico')
     tap(pg, '.row:has-text("Setai"):has-text("Confermato") >> nth=0', 800); shot(pg, '19-dettaglio-viaggio')
     ok('Ultima modifica: Daniele' in pg.inner_text('.scroll'), 'il dettaglio mostra chi ha fatto l\'ultima modifica')
     tap(pg, '.row:has-text("Km effettivi")', 500)
     pg.fill('#km-0', '3'); pg.fill('#km-1', '3'); tap(pg, '.sheet .btn:has-text("Fatto")', 900)
-    tap(pg, '.nav-btn:has-text("Indietro")', 600); tap(pg, '.nav-btn:has-text("Indietro")', 700)
+    tap(pg, '.nav-btn:has-text("Indietro")', 900)
+    ok(active_tab(pg) == 'Storico' and pg.locator(f'{CUR} h1.title').inner_text() == 'Storico', 'da un viaggio aperto dallo storico, Indietro torna allo storico')
+    tab(pg, 'Saldi')
     h3 = hero(pg)
     ok(abs(h3 - h1 - d2) < 0.11, f'modifica a 3 + 3 km (×2 = 12 validi come 2 + 2 ×3): saldo ricalcolato e coerente ({h3})')
-    tap(pg, '.tile:has-text("Storico")', 700); tap(pg, '.row:has-text("Setai"):has-text("Confermato") >> nth=0', 800)
+    tab(pg, 'Storico'); tap(pg, '.row:has-text("Setai"):has-text("Confermato") >> nth=0', 800)
     tap(pg, '.row:has-text("Annulla viaggio")', 500); tap(pg, '.sheet .btn:has-text("Annulla viaggio")', 1000)
-    tap(pg, '.nav-btn:has-text("Indietro")', 600); tap(pg, '.nav-btn:has-text("Indietro")', 700)
+    tap(pg, '.nav-btn:has-text("Indietro")', 900); tab(pg, 'Saldi')
     ok(abs(hero(pg) - h1) < 0.11, 'annullamento: il viaggio esce dai saldi')
     g = db(pg)
     ok(sum(1 for t in g['trips'] if t['status'] == 'cancelled') == 1, 'il viaggio annullato resta nello storico')
 
     # --- Pedaggi e rimborso ---
-    tap(pg, '.hchip:has-text("Pedaggi")', 700); shot(pg, '20-pedaggi')
-    before = pg.locator('.list').first.inner_text()
+    tap(pg, '.hchip:has-text("Pedaggi")', 900); shot(pg, '20-pedaggi')
+    ok(active_tab(pg) == 'Pedaggi', 'il riquadro pedaggi in home porta alla sezione Pedaggi')
+    before = pg.locator(f'{CUR} .list').first.inner_text()
     if pg.locator('.row:has-text("Tocca per registrare")').count():
         tap(pg, '.row:has-text("Tocca per registrare") >> nth=0', 500); shot(pg, '21-rimborso')
         tap(pg, '.sheet .btn:has-text("Registra rimborso")', 1000)
-        ok(pg.locator('.list').first.inner_text() != before and 'rimborsi registrati' in pg.inner_text('.scroll').lower(), 'rimborso registrato: saldi in euro aggiornati')
-    tap(pg, '.nav-btn:has-text("Indietro")', 700)
+        ok(pg.locator(f'{CUR} .list').first.inner_text() != before and 'rimborsi registrati' in pg.inner_text(f'{CUR} .scroll').lower(), 'rimborso registrato: saldi in euro aggiornati')
+    pg.go_back(); pg.wait_for_timeout(900)
+    ok(active_tab(pg) == 'Saldi', 'il tasto Indietro del telefono da una sezione riporta a Saldi')
 
     # --- Seconda sessione: stessi dati ---
     pg2 = c.new_page(); pg2.goto(SIM); pg2.wait_for_selector('.hero .big')
-    tap(pg2, '.nav .nav-btn', 700); pg2.locator('.chip:has-text("Matteo")').last.scroll_into_view_if_needed(); tap(pg2, '.section:has-text("Modalità dimostrativa") .chip:has-text("Matteo")', 700)
-    tap(pg2, '.nav-btn:has-text("Indietro")', 700)
+    tap(pg2, '.nav .nav-btn', 900); pg2.locator('.chip:has-text("Matteo")').last.scroll_into_view_if_needed(); tap(pg2, '.section:has-text("Modalità dimostrativa") .chip:has-text("Matteo")', 700)
+    tab(pg2, 'Saldi')
     rows1 = pg.locator('.section .list').first.inner_text(); rows2 = pg2.locator('.section .list').first.inner_text()
     ok(rows1.replace(' · tu', '') == rows2.replace(' · tu', ''), 'due sessioni (Daniele e Matteo) vedono gli stessi saldi')
     tap(pg2, '.row:has-text("Registra un viaggio")', 500); tap(pg2, '.row:has-text("Setai")', 400); tap(pg2, 'button:has-text("Continua")', 800)
@@ -214,8 +231,20 @@ with sync_playwright() as p:
     pg2.close()
 
     # --- Membri, luoghi ---
-    tap(pg, '.nav .nav-btn', 700); shot(pg, '22-membri')
-    tap(pg, '.nav-btn:has-text("Indietro")', 600); tap(pg, '.tile:has-text("Luoghi")', 700); shot(pg, '23-luoghi')
+    tap(pg, '.nav .nav-btn', 900); shot(pg, '22-membri')
+    ok(active_tab(pg) == 'Gruppo', 'le persone in alto in home aprono la sezione Gruppo')
+    tab(pg, 'Luoghi'); shot(pg, '23-luoghi')
+
+    # --- Sezioni scorrevoli col dito ---
+    tab(pg, 'Saldi')
+    swipe(pg, -220)
+    ok(active_tab(pg) == 'Storico' and abs(pg.locator('.page:has(h1.title:text-is("Storico"))').bounding_box()['x']) < 2, 'scorrendo a sinistra si passa da Saldi a Storico')
+    swipe(pg, -220); ok(active_tab(pg) == 'Pedaggi', 'e poi a Pedaggi')
+    swipe(pg, 220); ok(active_tab(pg) == 'Storico', 'scorrendo a destra si torna indietro di una sezione')
+    pg.go_back(); pg.wait_for_timeout(900); ok(active_tab(pg) == 'Saldi', 'Indietro del telefono dopo lo scorrimento: di nuovo su Saldi')
+    tab(pg, 'Luoghi'); tap(pg, f'{CUR} [aria-label="Aggiungi luogo"]', 700); swipe(pg, -220)
+    ok(active_tab(pg) == 'Luoghi' and pg.locator('.sheet').count() == 1, 'con un foglio aperto lo scorrimento non cambia sezione')
+    tap(pg, '.sheet-h .nav-btn', 500); tab(pg, 'Saldi')
     ok(not errs, f'nessun errore in console ({errs[:2]})')
     c.close()
 
@@ -257,12 +286,23 @@ with sync_playwright() as p:
     ok(pg.locator('.shotgun-card:has-text("È tuo")').count() == 1 and db(pg)['shotguns'].get('t-4') == 'm-daniele', 'chiamato Shotgun: il posto davanti è registrato')
     tap(pg, '.nav-btn:has-text("Indietro")', 600); tap(pg, '.nav .nav-btn', 700)
     pg.locator('.chip:has-text("Matteo")').last.scroll_into_view_if_needed(); tap(pg, '.section:has-text("Modalità dimostrativa") .chip:has-text("Matteo")', 700)
-    tap(pg, '.nav-btn:has-text("Indietro")', 600); tap(pg, '.banner:has-text("Bolgia")', 900)
+    tab(pg, 'Saldi'); tap(pg, '.banner:has-text("Bolgia")', 900)
     ok(pg.locator('.shotgun-btn').count() == 0 and pg.locator('.shotgun-card:has-text("Daniele ha chiamato Shotgun")').count() == 1, 'gli altri vedono chi ha preso il posto davanti, senza poterlo rubare')
     tap(pg, '.nav-btn:has-text("Indietro")', 600); tap(pg, '.nav .nav-btn', 700)
     pg.locator('.chip:has-text("Filippo")').last.scroll_into_view_if_needed(); tap(pg, '.section:has-text("Modalità dimostrativa") .chip:has-text("Filippo")', 700)
     ok('dimostrativi' in pg.inner_text('.section:has-text("Notifiche")'), 'nei dati dimostrativi le notifiche sono dichiarate non disponibili')
     c5.close()
+
+    # --- Schermo stretto (320 px): tutte le sezioni raggiungibili ---
+    c6 = b.new_context(viewport={'width': 320, 'height': 640}, device_scale_factor=2, is_mobile=True, has_touch=True, locale='it-IT'); pg = c6.new_page(); pg.goto(SIM)
+    hero(pg)
+    for name in ['Saldi', 'Storico', 'Pedaggi', 'Luoghi', 'Gruppo']:
+        tab(pg, name, 700)
+        bx = pg.locator(f'.tabbar [role=tab]:has-text("{name}")').bounding_box()
+        ok(active_tab(pg) == name and bx['x'] >= 0 and bx['x'] + bx['width'] <= 320, f'a 320 px la sezione «{name}» è raggiungibile e resta visibile nella barra')
+    shot(pg, '32-sezioni-320')
+    swipe(pg, 180); ok(active_tab(pg) == 'Luoghi', 'a 320 px si scorre anche col dito')
+    c6.close()
 
     # --- Build reale senza rete: il routing fallisce, i dati restano ---
     c4 = new_ctx(b); pg = c4.new_page(); pg.goto(REAL); hero(pg)

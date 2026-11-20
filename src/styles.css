@@ -36,7 +36,7 @@ h1, h2, h3, p { margin: 0; }
 /* ---- Struttura ---- */
 .app { height: 100%; max-width: 560px; margin: 0 auto; position: relative; background: var(--bg); }
 .screen { position: absolute; inset: 0; display: flex; flex-direction: column; background: var(--bg); overflow: clip; }
-.scroll { flex: 1; scroll-padding-bottom: 120px; overflow-y: auto; -webkit-overflow-scrolling: touch; padding: 0 var(--pad) 28px; overscroll-behavior: contain; }
+.scroll { flex: 1; scroll-padding-bottom: 120px; overflow-y: auto; overflow-x: hidden; -webkit-overflow-scrolling: touch; padding: 0 var(--pad) 28px; overscroll-behavior-y: contain; overscroll-behavior-x: auto; }
 .scroll.has-cta { padding-bottom: calc(112px + var(--sab)); }
 .nav { display: flex; align-items: center; gap: 4px; min-height: 48px; padding: calc(var(--sat) + 6px) 10px 2px; flex: none; }
 .nav .spacer { flex: 1; }
@@ -474,3 +474,23 @@ button.hchip:active { transform: scale(0.97); }
 .notify-banner .t { font-weight: 600; font-size: 15px; }
 .notify-banner .s { font-size: 13px; color: var(--dim); margin-top: 2px; }
 @media (prefers-reduced-motion: reduce) { .shotgun-card.won { animation: none; } }
+
+/* ---- Sezioni affiancate: si scorre col dito a destra e sinistra ---- */
+.tabs-root { position: absolute; inset: 0; }
+.tabbar { position: relative; flex: none; display: flex; gap: 2px; padding: calc(var(--sat) + 6px) 10px 0; overflow-x: auto; overflow-y: hidden; scrollbar-width: none;
+  box-shadow: inset 0 -1px 0 rgba(255, 255, 255, 0.08); -webkit-tap-highlight-color: transparent; }
+.tabbar::-webkit-scrollbar, .pager::-webkit-scrollbar { display: none; }
+.tabbar [role=tab] { flex: none; padding: 10px 12px 12px; font-size: 15px; font-weight: 600; letter-spacing: 0.01em; color: var(--text2); white-space: nowrap; transition: color 0.2s ease; }
+.tabbar [role=tab].on { color: var(--text); }
+.tab-led { position: absolute; left: 0; bottom: 0; height: 2px; width: 0; border-radius: 2px; background: var(--tab-led, #38e1ff); pointer-events: none;
+  box-shadow: 0 0 8px var(--tab-led, #38e1ff), 0 0 2px var(--tab-led, #38e1ff); will-change: transform, width; }
+.pager { flex: 1; min-height: 0; display: flex; overflow-x: auto; overflow-y: hidden; scroll-snap-type: x mandatory; overscroll-behavior-x: contain; scrollbar-width: none; }
+.pager > .page { position: relative; flex: 0 0 100%; height: 100%; scroll-snap-align: start; scroll-snap-stop: always; overflow: hidden; }
+.pager > .page > .screen { background: none; }
+.pager > .page .nav { padding-top: 4px; min-height: 40px; }
+.page-head { display: flex; align-items: center; gap: 8px; flex: none; padding: 14px var(--pad) 10px; }
+.page-head .title { flex: 1; min-width: 0; margin: 0; }
+/* con un foglio aperto non si cambia sezione */
+.pager:has(.sheet) { overflow-x: hidden; }
+.tabs-root:has(.sheet) .tabbar { pointer-events: none; opacity: 0.4; }
+@media (prefers-reduced-motion: reduce) { .tabbar [role=tab] { transition: none; } }

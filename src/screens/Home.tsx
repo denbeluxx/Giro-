@@ -128,10 +128,6 @@ export function Home() {
           </div>
         </div>
 
-        <div className="section tiles">
-          <button className="tile" onClick={() => push({ s: 'history' })}><span className="ic"><Icon n="history" size={26} /></span><span className="t">Storico</span></button>
-          <button className="tile" onClick={() => push({ s: 'places' })}><span className="ic"><Icon n="pin" size={26} /></span><span className="t">Luoghi</span></button>
-        </div>
 
         <div className="section">
           <div className="list"><button className="row" onClick={() => push({ s: 'plan', mode: 'record' })}>

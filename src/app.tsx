@@ -7,7 +7,8 @@ import { Home } from './screens/Home'
 import { History, Members, Money, Places } from './screens/Others'
 import { Plan } from './screens/Plan'
 import { TripView } from './screens/TripView'
-import { Btn, Empty, Icon, Notice, Skel, ToastHost, openSheets, reducedMotion, useBusy, useToast } from './ui/kit'
+import { Btn, Empty, Icon, Notice, Skel, ToastHost, ledHex, openSheets, reducedMotion, useBusy, useToast } from './ui/kit'
+import { Tabs } from './ui/Tabs'
 
 export type Route =
   | { s: 'home' } | { s: 'members' } | { s: 'places' } | { s: 'history' } | { s: 'money' }
@@ -43,6 +44,9 @@ export function transition(dir: 'push' | 'pop' | 'fade', fn: () => void) {
 }
 
 const params = new URLSearchParams(window.location.search)
+/** Sezioni principali, affiancate e scorrevoli: l'ordine è quello della barra in alto. */
+const TABS = ['home', 'history', 'money', 'places', 'members'] as const
+const TAB_LABEL: Record<(typeof TABS)[number], string> = { home: 'Saldi', history: 'Storico', money: 'Pedaggi', places: 'Luoghi', members: 'Gruppo' }
 /** Soglia dell'avviso «saldo molto negativo». */
 const LOW_M = -70000
 /** Uscita volontaria in corso: non va confusa con una sessione scaduta. */
@@ -156,10 +160,32 @@ function GroupProvider({ groupId, groups, switchGroup, deepTrip, missing, clearD
     return () => window.removeEventListener('popstate', onPop)
   }, [popStack])
   const forward = useCallback(() => { level.current += 1; try { history.pushState({ d: level.current }, '') } catch { /* */ } }, [])
+  // sezione aperta (Saldi, Storico…): lasciando Saldi si aggiunge un livello, così il tasto Indietro del telefono ci riporta
+  const [tab, setTab] = useState(0)
+  const tabEntry = useRef(false)
+  const tabState = useRef({ tab: 0, depth: 1 })
+  tabState.current = { tab, depth: stack.length }
   const forwardRef = useRef(forward)
   forwardRef.current = forward
+  const goTab = useCallback((i: number) => {
+    setTab(i)
+    if (i !== 0 && !tabEntry.current) { tabEntry.current = true; forwardRef.current() }
+    else if (i === 0 && tabEntry.current) { tabEntry.current = false; pending.current = 'collapse'; history.back() }
+  }, [])
+  useEffect(() => {
+    const fn = () => {
+      if (tabState.current.depth !== 1 || tabState.current.tab === 0) return false
+      tabEntry.current = false; setTab(0); return true
+    }
+    handlers.current.unshift(fn)
+    return () => { handlers.current = handlers.current.filter((h) => h !== fn) }
+  }, [])
   const onBack = useCallback((fn: () => boolean) => { handlers.current.push(fn); return () => { handlers.current = handlers.current.filter((h) => h !== fn) } }, [])
-  const push = useCallback((r: Route) => { forward(); transition('push', () => setStack((s) => [...s, r])) }, [forward])
+  const push = useCallback((r: Route) => {
+    const t = (TABS as readonly string[]).indexOf(r.s)
+    if (t >= 0) return goTab(t) // le sezioni non si impilano: si scorre a quella giusta
+    forward(); transition('push', () => setStack((s) => [...s, r]))
+  }, [forward, goTab])
   const pop = useCallback(() => { if (level.current > 0) history.back(); else popStack() }, [popStack])
   const leave = useCallback((n: number) => {
     const k = Math.min(n, level.current)
@@ -173,6 +199,7 @@ function GroupProvider({ groupId, groups, switchGroup, deepTrip, missing, clearD
   }, [])
   const replace = useCallback((r: Route) => transition('fade', () => setStack((s) => [...s.slice(0, -1), r])), [])
   const home = useCallback(() => {
+    tabEntry.current = false; setTab(0)
     if (level.current > 0) { goingHome.current = true; history.go(-level.current) }
     else transition('pop', () => setStack([{ s: 'home' }]))
   }, [])
@@ -218,11 +245,10 @@ function GroupProvider({ groupId, groups, switchGroup, deepTrip, missing, clearD
   const r = stack[stack.length - 1]
   return (
     <C.Provider value={ctx}>
-      {r.s === 'home' && <Home />}
-      {r.s === 'members' && <Members />}
-      {r.s === 'places' && <Places />}
-      {r.s === 'history' && <History />}
-      {r.s === 'money' && <Money />}
+      {(TABS as readonly string[]).includes(r.s) && <Tabs index={tab} onIndex={goTab} color={ledHex(ctx.me)} tabs={TABS.map((k) => ({
+        key: k, label: TAB_LABEL[k],
+        page: k === 'home' ? <Home /> : k === 'history' ? <History /> : k === 'money' ? <Money /> : k === 'places' ? <Places /> : <Members />,
+      }))} />}
       {r.s === 'plan' && <Plan key={`${r.edit?.id ?? r.redo?.id ?? 'new'}-${stack.length}`} mode={r.mode} edit={r.edit} redo={r.redo} at={r.at} resume={r.resume} />}
       {r.s === 'trip' && <TripView key={r.id} id={r.id} fresh={r.fresh} autoShotgun={r.shotgun} />}
     </C.Provider>

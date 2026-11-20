@@ -11,9 +11,12 @@ import { PUSH_TEXT, disablePush, enablePush, usePush } from '../lib/push'
 import { uid, type ID, type Place, type Trip } from '../lib/types'
 import { Avatar, Btn, Empty, Icon, Seg, Sheet, Switch, useBusy, useToast, led } from '../ui/kit'
 import { PlaceSearch } from '../ui/PlaceSearch'
+import { useInTabs } from '../ui/Tabs'
 
 export function Header({ title, right }: { title: string; right?: React.ReactNode }) {
   const { pop } = useApp()
+  // nelle sezioni affiancate niente «Indietro»: si scorre o si tocca la barra
+  if (useInTabs()) return <div className="page-head"><h1 className="title">{title}</h1>{right}</div>
   return <><div className="nav"><button className="nav-btn" onClick={pop}><Icon n="back" />Indietro</button><span className="spacer" />{right}</div><div style={{ padding: '0 var(--pad) 10px' }}><h1 className="title">{title}</h1></div></>
 }
 
