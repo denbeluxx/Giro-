@@ -400,3 +400,16 @@ button.hchip:active { transform: scale(0.97); }
 .toast { box-shadow: inset 0 0 0 1px rgba(255, 255, 255, 0.14), var(--shadow); }
 .done svg { filter: drop-shadow(0 0 10px rgb(var(--led-pos) / 0.6)); }
 .empty .ic { background: rgba(0, 0, 0, 0.28); box-shadow: inset 0 0 0 1px rgba(255, 255, 255, 0.09); }
+
+/* nomi lunghi: vanno a capo o si accorciano, senza uscire dallo schermo */
+.title { overflow-wrap: anywhere; }
+.row .v { flex: 0 1 auto; min-width: 0; max-width: 62%; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.row .v.strong, .row .v.num { flex: none; max-width: none; }
+.row .grow { min-width: 30%; }
+.chip { max-width: 100%; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.sheet-h h3 { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.panel-title { flex: 1 1 60%; }
+.panel-title + .pill, .panel .pill { max-width: 40%; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; flex-shrink: 1; }
+.cta:has(.cta-hint) { background: linear-gradient(180deg, rgba(22, 23, 26, 0) 0%, rgba(22, 23, 26, 0.97) 22%); }
+.leaflet-container, .pin { font-family: inherit; }
+.seg button { min-height: 44px; }

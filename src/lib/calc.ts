@@ -89,7 +89,8 @@ function segTollCents(leg: Leg): number[] {
     if (!total) return out
     // l'importo della tratta si divide tra i tratti a pagamento in proporzione alla loro lunghezza
     let idx = segs.map((s, i) => (s.toll.status !== 'none' ? i : -1)).filter((i) => i >= 0)
-    if (!idx.length) idx = [segs.reduce((best, s, i) => (s.meters > segs[best].meters ? i : best), 0)]
+    // nessun tratto riconosciuto a pagamento: l'importo scritto a mano si divide su tutta la tratta
+    if (!idx.length) idx = segs.map((_, i) => i)
     // pesi: gli importi calcolati per ogni tratto, se tutti noti; altrimenti la lunghezza
     const auto = idx.map((i) => (segs[i].toll.status !== 'out' ? safe(segs[i].toll.cents, MAX_CENTS) : 0))
     const w = auto.every((c) => c > 0) ? auto : idx.map((i) => Math.max(1, safe(segs[i].meters, MAX_M)))
@@ -102,7 +103,9 @@ function segTollCents(leg: Leg): number[] {
 }
 
 /** Arrotonda a interi mantenendo la somma a zero (resto più grande, ordine stabile). */
-export function zeroSumRound(vals: Map<ID, number>): Map<ID, number> {
+export function zeroSumRound(vals: Map<ID, number>, seed = ''): Map<ID, number> {
+  // a parità di resto il metro in più non tocca sempre alla stessa persona: l'ordine dipende dal viaggio
+  const rank = (id: ID) => { let h = 2166136261; for (const c of seed + '|' + id) h = Math.imul(h ^ c.charCodeAt(0), 16777619); return h >>> 0 }
   const ids = [...vals.keys()].sort()
   const clean = new Map(ids.map((id) => [id, isFinite(vals.get(id)!) ? vals.get(id)! : 0]))
   const out = new Map<ID, number>()
@@ -112,7 +115,7 @@ export function zeroSumRound(vals: Map<ID, number>): Map<ID, number> {
     const dir = sum > 0 ? -1 : 1
     const order = ids
       .map((id) => ({ id, err: (out.get(id)! - clean.get(id)!) * (sum > 0 ? 1 : -1) }))
-      .sort((a, b) => b.err - a.err || (a.id < b.id ? -1 : 1))
+      .sort((a, b) => b.err - a.err || (seed ? rank(a.id) - rank(b.id) : 0) || (a.id < b.id ? -1 : 1))
     const n = Math.min(Math.abs(sum), ids.length * 4) // mai un ciclo infinito su dati anomali
     for (let i = 0; i < n; i++) {
       const id = order[i % order.length].id
@@ -151,17 +154,18 @@ export interface TripEffect {
  */
 export function tripEffect(trip: Trip): TripEffect {
   const legsIn = Array.isArray(trip.legs) ? trip.legs : []
-  const flagged = new Map<ID, number>()
-  for (const leg of legsIn) {
-    if (leg.designated && leg.driverId) flagged.set(leg.driverId, (flagged.get(leg.driverId) ?? 0) + legMeters(leg))
-  }
+  // «Non posso bere ostia» vale per tutta l'uscita: basta che sia accesa su una tratta.
+  // La soglia dei 5 km si applica ai km come li vede l'utente (arrotondati a 0,1 km).
+  const flaggedTrip = legsIn.some((l) => l.designated)
+  const totalShown = Math.round(legsIn.reduce((a, l) => a + (l.driverId ? legMeters(l) : 0), 0) / 100) * 100
+  const tripMult: 1 | 2 | 3 = !flaggedTrip ? 1 : totalShown < THRESHOLD_M ? 3 : 2
   const km = new Map<ID, number>()
   const eur = new Map<ID, number>()
   const add = (m: Map<ID, number>, id: ID, v: number) => m.set(id, (m.get(id) ?? 0) + v)
   const legs: LegEffect[] = []
   for (const leg of legsIn) {
     const real = legMeters(leg)
-    const mult: 1 | 2 | 3 = !leg.designated || !leg.driverId ? 1 : (flagged.get(leg.driverId) ?? 0) < THRESHOLD_M ? 3 : 2
+    const mult: 1 | 2 | 3 = leg.driverId ? tripMult : 1
     const toll = legToll(leg)
     const payerId = leg.tollPayerId ?? leg.driverId
     legs.push({ kind: leg.kind, driverId: leg.driverId, realMeters: real, mult, weightedMeters: real * mult, toll, payerId })
@@ -184,8 +188,8 @@ export function tripEffect(trip: Trip): TripEffect {
     })
   }
   return {
-    km: zeroSumRound(km),
-    eur: zeroSumRound(eur),
+    km: zeroSumRound(km, trip.id),
+    eur: zeroSumRound(eur, trip.id),
     legs,
     realMeters: legs.reduce((a, l) => a + l.realMeters, 0),
     weightedMeters: legs.reduce((a, l) => a + l.weightedMeters, 0),
@@ -215,7 +219,8 @@ export function balances(members: Member[], trips: Trip[], settlements: Settleme
       if (l.driverId && (!lastDrove[l.driverId] || lastDrove[l.driverId]! < t.startsAt)) lastDrove[l.driverId] = t.startsAt
     }
   }
-  for (const s of settlements) {
+  for (const s of Array.isArray(settlements) ? settlements : []) {
+    if (!s) continue
     // un rimborso verso chi non è del gruppo non viene contato
     if (!known.has(s.from) || !known.has(s.to) || s.from === s.to) continue
     const c = safe(s.cents, MAX_CENTS)

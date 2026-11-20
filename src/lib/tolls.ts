@@ -67,7 +67,8 @@ export function tariffFor(a: string, b: string, groupTolls?: Record<string, Grou
   const k = pairKey(a, b)
   const g = groupTolls?.[k]
   const t = TARIFFS[k]
-  if (g && (t == null || g.on.slice(0, 10) > TARIFF_DATE)) return { cents: g.cents, fonte: `aggiornata dal gruppo il ${g.on.slice(0, 10).split('-').reverse().join('/')}` }
+  const gOk = !!g && typeof g.on === 'string' && Number.isFinite(g.cents) && g.cents >= 0
+  if (g && gOk && (t == null || g.on.slice(0, 10) > TARIFF_DATE)) return { cents: g.cents, fonte: `aggiornata dal gruppo il ${g.on.slice(0, 10).split('-').reverse().join('/')}` }
   if (t != null) return { cents: t, fonte: `ufficiale classe A (${TARIFF_SOURCE})` }
   return null
 }
@@ -105,9 +106,9 @@ export interface OsrmLeg { distance: number; duration: number; steps: OsrmStep[]
 const pt = (l: [number, number]): Pt => ({ lat: l[1], lng: l[0] })
 /** Sigle autostradali di un passo del percorso («A4; E64» → A4). La E64 coincide con l'A4 tra Milano e Brescia. */
 function motorways(st: OsrmStep): string[] {
-  const tokens = (st.ref ?? '').split(/[;,/]/).map((x) => x.replace(/\s+/g, '').toUpperCase()).filter(Boolean)
-  const a = tokens.map((x) => x.match(/^A\d+$/)?.[0]).filter((x): x is string => !!x)
-  return a.length ? a : tokens.includes('E64') ? ['A4'] : []
+  const ref = typeof st.ref === 'string' ? st.ref.toUpperCase() : ''
+  const a = [...ref.matchAll(/(?:^|[^A-Z0-9])A\s?(\d{1,2})(?!\d)/g)].map((m) => `A${m[1]}`)
+  return a.length ? [...new Set(a)] : /(?:^|[^A-Z0-9])E\s?64(?!\d)/.test(ref) ? ['A4'] : []
 }
 
 /**
@@ -116,18 +117,23 @@ function motorways(st: OsrmStep): string[] {
  * Altre autostrade a pagamento (A35 BreBeMi, A58…) restano fuori copertura: l'importo si scrive a mano.
  */
 export function analyzeOsrmLeg(leg: OsrmLeg, groupTolls?: Record<string, GroupToll>): Toll {
-  const steps = leg.steps ?? []
+  try { return analyze(leg, groupTolls) } catch { return { status: 'verify', cents: null, note: 'Percorso non leggibile: controlla se c\'è un pedaggio' } }
+}
+const okLoc = (l: unknown): l is [number, number] => Array.isArray(l) && Number.isFinite(l[0]) && Number.isFinite(l[1])
+function analyze(leg: OsrmLeg, groupTolls?: Record<string, GroupToll>): Toll {
+  const steps = (Array.isArray(leg?.steps) ? leg.steps : []).filter(Boolean)
   const runs: { from: Pt; to: Pt; meters: number }[] = []
   const others = new Set<string>()
   let run: { from: Pt; to: Pt; meters: number } | null = null
   steps.forEach((st, i) => {
     const refs = motorways(st)
     for (const r of refs) if (r !== 'A4' && !FREE_REFS.has(r)) others.add(r)
-    const pts = st.intersections ?? []
-    if (refs.includes('A4') && (st.maneuver || pts.length)) {
-      const start = st.maneuver ? pt(st.maneuver.location) : pt(pts[0].location)
+    const pts = (st.intersections ?? []).filter((x) => okLoc(x?.location))
+    const here = okLoc(st.maneuver?.location) ? st.maneuver!.location : pts[0]?.location
+    if (refs.includes('A4') && here) {
+      const start = pt(here)
       const next = steps[i + 1]
-      const end = next?.maneuver ? pt(next.maneuver.location) : pts.length ? pt(pts[pts.length - 1].location) : start
+      const end = okLoc(next?.maneuver?.location) ? pt(next!.maneuver!.location) : pts.length ? pt(pts[pts.length - 1].location) : start
       if (run) { run.to = end; run.meters += st.distance } else { run = { from: start, to: end, meters: st.distance }; runs.push(run) }
     } else if (run && st.distance > 400) run = null // le rampe brevi senza sigla non spezzano il tratto
   })

@@ -84,7 +84,7 @@ export async function routeStops(stops: Stop[], tolls: Tolls, signal?: AbortSign
   return j.routes.map((r: any): Route => ({
     state: 'ok',
     geometry: simplify(r.geometry.coordinates.map((c: [number, number]) => [c[1], c[0]])),
-    segs: r.legs.map((l: OsrmLeg) => ({ meters: l.distance, seconds: l.duration, toll: analyzeOsrmLeg(l, tolls) })),
+    segs: r.legs.map((l: OsrmLeg) => ({ meters: Math.round(l.distance), seconds: Math.round(l.duration), toll: analyzeOsrmLeg(l, tolls) })),
   }))
 }
 

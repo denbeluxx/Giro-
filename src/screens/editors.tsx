@@ -63,7 +63,9 @@ export function TollSheet({ trip, people, groupTolls, meId, onSave, onClose }: {
     // se nel frattempo il gruppo ha confermato la tariffa di questi caselli, la proponiamo subito
     const known = t.from && t.to ? groupTolls?.[pairKey(t.from, t.to)] : undefined
     const cents = known && !t.manual ? known.cents : t.status === 'out' ? (t.known || null) : t.cents
-    return { amount: cents ? (cents / 100).toFixed(2).replace('.', ',') : '', touched: !!known && !t.manual && t.cents !== known.cents, mirror: false, payer: l.tollPayerId ?? l.driverId, from: t.from ?? '', to: t.to ?? '', remember: false, t }
+    // un importo scritto a mano resta tale, anche se è 0: non viene sovrascritto dall'altra tratta
+    const manual = l.tollOverride != null
+    return { amount: manual ? (l.tollOverride! / 100).toFixed(2).replace('.', ',') : cents ? (cents / 100).toFixed(2).replace('.', ',') : '', touched: manual || (!!known && !t.manual && t.cents !== known.cents), mirror: false, payer: l.tollPayerId ?? l.driverId, from: t.from ?? '', to: t.to ?? '', remember: false, t }
   })
   const [st, setSt] = useState<TollState[]>(init)
   const set = (i: number, p: Partial<TollState>) => setSt((prev) => prev.map((s, j) => (j === i ? { ...s, ...p } : s)))
@@ -120,7 +122,7 @@ export function TollSheet({ trip, people, groupTolls, meId, onSave, onClose }: {
             </div>
             {s.touched && s.amount !== '' && values[i] == null && <p className="foot" style={{ color: 'var(--danger)' }}>Scrivi un importo tra 0 e {MAX_EUR} €, ad esempio 4,40.</p>}
             {s.mirror && <p className="foot">Stessi caselli: proposto lo stesso importo dell'altra tratta.</p>}
-            {s.touched && s.amount === '' && s.t.status !== 'none' && <p className="foot">Lasciato vuoto, il pedaggio resta da verificare{s.from && s.to ? ' per i caselli scelti' : ''}. Scrivi 0 se non c'era.</p>}
+            {s.touched && s.amount === '' && s.t.status !== 'none' && <p className="foot">{s.from && s.to && s.from !== s.to ? 'Lasciato vuoto, il pedaggio resta da verificare per i caselli scelti.' : 'Lasciato vuoto, torna il calcolo automatico.'} Scrivi 0 se non c'era.</p>}
             <p className="label" style={{ marginTop: 14 }}>Ha pagato</p>
             <div className="chips">{people.map((m) => <button key={m.id} className="chip" style={led(m)} aria-pressed={s.payer === m.id} onClick={() => set(i, { payer: m.id })}><Avatar m={m} size={34} />{m.name}</button>)}</div>
           </div>

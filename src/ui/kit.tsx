@@ -44,7 +44,7 @@ export function led(m?: Pick<Member, 'color'> | null): CSSProperties {
   return { '--lc': `${(n >> 16) & 255} ${(n >> 8) & 255} ${n & 255}`, '--lh': h } as CSSProperties
 }
 export function Avatar({ m, size = 36 }: { m?: Pick<Member, 'name' | 'color'> | null; size?: number }) {
-  const initials = (m?.name ?? '?').trim().split(/\s+/).map((w) => w[0]).slice(0, 2).join('').toUpperCase()
+  const initials = (m?.name ?? '?').trim().split(/\s+/).map((w) => [...w][0] ?? '').slice(0, 2).join('').toUpperCase()
   return <span className="avatar" aria-hidden="true" style={{ ...led(m), width: size, height: size, fontSize: size * 0.4 }}>{initials}</span>
 }
 

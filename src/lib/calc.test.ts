@@ -43,8 +43,9 @@ describe('regole dei chilometri', () => {
   it('senza flag: ×1', () => {
     expect(tripEffect(trip([go(2, false), back(2, false)])).weightedMeters).toBe(4000)
   })
-  it('km corretti a mano entrano nella soglia con il valore preciso', () => {
-    const l = { ...go(6), actualMeters: 4999 }
+  it('km corretti a mano entrano nella soglia come li vede l\'utente (4,9 km ×3; 4,96 km si legge 5,0 → ×2)', () => {
+    const l = { ...go(6), actualMeters: 4949 }
+    expect(tripEffect(trip([{ ...l, actualMeters: 4960 }])).legs[0].mult).toBe(2)
     expect(tripEffect(trip([l])).legs[0].mult).toBe(3)
     expect(tripEffect(trip([{ ...l, actualMeters: 5000 }])).legs[0].mult).toBe(2)
   })
@@ -53,9 +54,10 @@ describe('regole dei chilometri', () => {
     const e = tripEffect(trip([{ ...go(3), time: '22:30' }, r]))
     expect(e.legs.map((l) => l.mult)).toEqual([2, 2]) // 6 km complessivi ≥ 5
   })
-  it('conducenti diversi: la soglia vale per ciascuno', () => {
+  it('la soglia vale per l\'intera uscita, anche su dati vecchi con conducenti diversi o opzione su una sola tratta', () => {
+    expect(tripEffect(trip([go(3), { ...back(3), designated: false }])).legs.map((l) => l.mult)).toEqual([2, 2])
     const e = tripEffect(trip([go(3), { ...back(3), driverId: 'B', stops: [stop('e', ['A']), stop('s', [], ['A'])] }]))
-    expect(e.legs.map((l) => l.mult)).toEqual([3, 3]) // 3 km a testa < 5
+    expect(e.legs.map((l) => l.mult)).toEqual([2, 2]) // 6 km in tutto
     expect(sum(e.km)).toBe(0)
   })
   it('le fermate intermedie non creano nuove soglie', () => {
@@ -206,5 +208,34 @@ describe('pedaggi su percorsi reali (risposte di OSRM del 20/11/2026: sigla, met
   it('Seriate → Verona: A4 oltre Brescia Est, fuori copertura; Brescia → Milano via BreBeMi: fuori copertura', () => {
     expect(analyzeOsrmLeg(leg([['', 464, 9.7475, 45.6538], ['A4', 100572, 9.753, 45.6545], ['', 1130, 10.9646, 45.3975]]))).toMatchObject({ status: 'out', road: 'A4' })
     expect(analyzeOsrmLeg(leg([['A4', 3469, 10.164, 45.5261], ['A35', 55227, 10.1272, 45.5434], ['A58', 1302, 9.4407, 45.5123], ['SP103', 15540, 9.4343, 45.5158]]))).toMatchObject({ status: 'out', road: 'A35' })
+  })
+})
+
+describe('correzioni dal collaudo del 20/11/2026', () => {
+  type S = [string, number, number, number]
+  const leg2 = (s: S[]) => ({ distance: 1, duration: 1, steps: s.map(([ref, distance, lng, lat]) => ({ ref, distance, maneuver: { location: [lng, lat] as [number, number] } })) })
+  it('sigle scritte in altri modi: «A4 - E64», «A4 Torino-Trieste»', () => {
+    for (const ref of ['A4 - E64', 'A4 Torino-Trieste', 'a4', 'SS11;A4']) {
+      expect(analyzeOsrmLeg(leg2([[ref, 21407, 9.6153, 45.6413], ['', 412, 9.3628, 45.5702]])), ref).toMatchObject({ status: 'ok', cents: 180 })
+    }
+    expect(analyzeOsrmLeg(leg2([['SS42', 21407, 9.6153, 45.6413], ['', 412, 9.3628, 45.5702]])).status).toBe('none')
+  })
+  it('passi rovinati non fanno fallire il percorso', () => {
+    const bad: any = { distance: 1, duration: 1, steps: [{ ref: 4, distance: 10, maneuver: {} }, null, { ref: 'A4', distance: 5, intersections: [{}] }] }
+    expect(() => analyzeOsrmLeg(bad)).not.toThrow()
+  })
+  it('una tariffa del gruppo senza data non manda in errore', () => {
+    expect(a4Toll('seriate', 'bergamo', { 'bergamo|seriate': { cents: 100 } as any }).cents).toBe(60)
+  })
+  it('pedaggio scritto a mano su una tratta senza autostrada: lo pagano tutti quelli a bordo, tratto per tratto', () => {
+    const l = leg({ km: [6, 4], stops: [stop('s', ['B']), stop('p', ['C']), stop('e', [], ['B', 'C'])], tollOverride: 250 } as any)
+    const e = tripEffect(trip([l]))
+    expect(e.eur.get('C')).toBeLessThan(0)
+    expect(sum(e.eur)).toBe(0)
+  })
+  it('a parità di resto, il metro in più non tocca sempre alla stessa persona', () => {
+    const l = () => leg({ km: [12.4], stops: [stop('s', ['B', 'C']), stop('e', [], ['B', 'C'])] } as any)
+    const diffs = new Set(['t1', 't2', 't3', 't4', 't5', 't6', 't7', 't8'].map((id) => { const e = tripEffect({ ...trip([l()]), id }); return Math.sign(e.km.get('B')! - e.km.get('C')!) }))
+    expect(diffs.size).toBeGreaterThan(1)
   })
 })

@@ -37,7 +37,9 @@ export function transition(dir: 'push' | 'pop' | 'fade', fn: () => void) {
   const d = document as any
   if (!d.startViewTransition || reducedMotion()) return fn()
   document.documentElement.dataset.nav = dir
-  d.startViewTransition(() => flushSync(fn))
+  const t = d.startViewTransition(() => flushSync(fn))
+  // una transizione interrotta da quella successiva non è un errore
+  for (const k of ['ready', 'finished', 'updateCallbackDone']) t?.[k]?.catch?.(() => {})
 }
 
 const params = new URLSearchParams(window.location.search)
@@ -181,7 +183,8 @@ function GroupProvider({ groupId, groups, switchGroup, deepTrip, missing, clearD
         if (fresh) setData(fresh)
         const now = fresh?.trips.find((x) => x.id === t.id)
         // la risposta precedente era andata persa ma il salvataggio era riuscito: nessun conflitto vero
-        if (now && now.status === t.status && JSON.stringify(now.legs) === JSON.stringify(t.legs)) return now
+        const same = (a: Trip, b: Trip) => a.status === b.status && a.startsAt === b.startsAt && JSON.stringify([a.legs, a.dest, a.presentIds, a.unavailableIds]) === JSON.stringify([b.legs, b.dest, b.presentIds, b.unavailableIds])
+        if (now && same(now, t)) return now
         toast('Aggiornato da un altro dispositivo: dati ricaricati')
         return null
       }

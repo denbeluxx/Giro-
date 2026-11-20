@@ -9,8 +9,24 @@ interface G { group: Group; members: Member[]; places: Place[]; trips: Trip[]; s
 interface DB { groups: Record<ID, G> }
 
 const mem: { db?: string } = {}
+/** Dati salvati incompleti o rovinati: si riparano i pezzi mancanti; se manca l'essenziale si riparte dai dati di prova. */
+function repair(x: any): DB | null {
+  if (!x || typeof x !== 'object' || !x.groups || typeof x.groups !== 'object' || Array.isArray(x.groups)) return null
+  const arr = (v: any) => (Array.isArray(v) ? v.filter((e) => e && typeof e === 'object') : [])
+  for (const [id, g] of Object.entries<any>(x.groups)) {
+    if (!g || typeof g !== 'object' || !g.group || typeof g.group !== 'object' || !Array.isArray(g.members) || !g.members.some((m: any) => m && m.id)) return null
+    g.group = { ...g.group, id: g.group.id ?? id, name: typeof g.group.name === 'string' && g.group.name.trim() ? g.group.name : 'Gruppo', settings: g.group.settings && typeof g.group.settings === 'object' && !Array.isArray(g.group.settings) ? g.group.settings : {} }
+    g.members = arr(g.members).filter((m: any) => m.id); g.places = arr(g.places)
+    const seen = new Set<string>()
+    g.trips = arr(g.trips).filter((t: any) => t.id && !seen.has(t.id) && seen.add(t.id))
+    g.settlements = arr(g.settlements)
+  }
+  return Object.keys(x.groups).length ? (x as DB) : null
+}
 function read(): DB {
-  try { const s = localStorage.getItem(KEY); if (s) return JSON.parse(s) } catch { if (mem.db) return JSON.parse(mem.db) }
+  for (const src of [() => localStorage.getItem(KEY), () => mem.db ?? null]) {
+    try { const s = src(); const db = s ? repair(JSON.parse(s)) : null; if (db) return db } catch { /* prossima fonte */ }
+  }
   const db = seed()
   write(db, false)
   return db

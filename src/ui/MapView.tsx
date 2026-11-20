@@ -29,12 +29,9 @@ export function MapView({ color, stops = [], geometry, dots = [], destDot = null
       tiles.current = L.tileLayer(isDark() ? TILES.dark : TILES.light, { maxZoom: 19, subdomains: 'abcd', attribution: '© OpenStreetMap · © CARTO' }).addTo(m)
     }
     setTiles()
-    const mq = matchMedia('(prefers-color-scheme: dark)')
-    mq.addEventListener('change', setTiles)
-    window.addEventListener('giro-theme', setTiles)
     const ro = new ResizeObserver(() => m.invalidateSize())
     ro.observe(el.current!)
-    return () => { ro.disconnect(); mq.removeEventListener('change', setTiles); window.removeEventListener('giro-theme', setTiles); m.remove() }
+    return () => { ro.disconnect(); m.remove() }
   }, [interactive])
 
   const sig = JSON.stringify([color, stops.map((s) => [s.lat, s.lng, s.label, s.end]), geometry?.length, geometry?.[0], dots, destDot && [destDot.lat, destDot.lng]])

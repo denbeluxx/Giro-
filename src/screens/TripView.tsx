@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useRef, useState } from 'react'
 import { useApp } from '../app'
-import { displayRound, legToll, tripEffect, type TripEffect } from '../lib/calc'
+import { balances, displayRound, legToll, tripEffect, type TripEffect } from '../lib/calc'
 import { fmtDate, fmtDateLong, fmtEur, fmtEurSigned, fmtKm, fmtKmSigned, fmtTime } from '../lib/format'
 import { shareText, whatsappUrl } from '../lib/share'
 import { store } from '../lib/store'
@@ -34,7 +34,11 @@ export function ShareSheet({ trip, members, onClose }: { trip: Trip; members: Me
 }
 
 export function Done({ trip, fx, meId, onClose }: { trip: Trip; fx: TripEffect; meId: ID; onClose: () => void }) {
-  const km = displayRound(Object.fromEntries(fx.km))[meId] ?? 0, eur = fx.eur.get(meId) ?? 0
+  // la variazione mostrata è la differenza tra il saldo che si legge in home prima e dopo questo viaggio
+  const { data } = useApp()
+  const others = data.trips.filter((t) => t.id !== trip.id)
+  const shown = (trips: Trip[]) => displayRound(balances(data.members, trips, data.settlements).km)[meId] ?? 0
+  const km = shown([...others, { ...trip, status: 'confirmed' }]) - shown(others), eur = fx.eur.get(meId) ?? 0
   useEffect(() => {
     const k = (e: KeyboardEvent) => { if (e.key === 'Escape') onClose(); if (e.key === 'Tab') { e.preventDefault(); (document.querySelector('.done .btn') as HTMLElement | null)?.focus() } }
     window.addEventListener('keydown', k); return () => window.removeEventListener('keydown', k)
@@ -78,6 +82,14 @@ export function TripView({ id, fresh }: { id: ID; fresh?: boolean }) {
   useEffect(() => {
     if (stored?.status === 'cancelled' && (sheet === 'km' || sheet === 'toll')) { setSheet(null); toast('Questo viaggio è stato appena annullato da un altro dispositivo.') }
   }, [stored?.status]) // eslint-disable-line react-hooks/exhaustive-deps
+  // un foglio aperto mostra i dati di quando è stato aperto: se nel frattempo il viaggio cambia altrove, si chiude
+  const openedAt = useRef<{ sheet: typeof sheet; version: number }>({ sheet: null, version: 0 })
+  const ownSave = useRef(false)
+  useEffect(() => {
+    if (!trip) return
+    if (openedAt.current.sheet !== sheet) { openedAt.current = { sheet, version: trip.version }; return }
+    if ((sheet === 'km' || sheet === 'toll') && trip.version !== openedAt.current.version && !ownSave.current) { setSheet(null); toast('Viaggio aggiornato da un altro dispositivo: riapri per vedere i dati nuovi') }
+  }, [sheet, trip?.version]) // eslint-disable-line react-hooks/exhaustive-deps
   if (!trip) return <div className="screen"><div className="nav"><button className="nav-btn" onClick={pop}><Icon n="back" />Indietro</button></div><div className="scroll"><Empty icon="alert" title="Uscita non trovata" text="Potrebbe appartenere a un altro gruppo o essere stata rimossa." /></div></div>
 
   const fx = tripEffect(trip)
@@ -103,8 +115,8 @@ export function TripView({ id, fresh }: { id: ID; fresh?: boolean }) {
   const patch = (legs: Leg[], extra: Partial<Trip> = {}) => run(async () => {
     const next = { ...trip, ...extra, legs }
     if (JSON.stringify([next.legs, next.status]) === JSON.stringify([trip.legs, trip.status]) && !Object.keys(extra).length) { setSheet(null); return } // niente da salvare
-    const saved = await saveTrip({ ...next, updatedBy: me.id, updatedAt: new Date().toISOString() }, trip.version)
-    if (saved) setSheet(null)
+    ownSave.current = true
+    try { const saved = await saveTrip({ ...next, updatedBy: me.id, updatedAt: new Date().toISOString() }, trip.version); if (saved) setSheet(null) } finally { ownSave.current = false }
   })
   const confirm = () => run(async () => {
     const next: Trip = { ...trip, status: 'confirmed', confirmedAt: new Date().toISOString(), updatedBy: me.id, updatedAt: new Date().toISOString() }
@@ -113,8 +125,8 @@ export function TripView({ id, fresh }: { id: ID; fresh?: boolean }) {
   })
   const saveTolls = (legs: Leg[], remember: Record<string, GroupToll>) => run(async () => {
     for (const [k, v] of Object.entries(remember)) await store.setGroupToll(data.group.id, k, v)
-    const saved = await saveTrip({ ...trip, legs, updatedBy: me.id, updatedAt: new Date().toISOString() }, trip.version)
-    if (saved) { setSheet(null); if (Object.keys(remember).length) { await app.reload(); toast('Tariffa ricordata per il gruppo') } }
+    ownSave.current = true
+    try { const saved = await saveTrip({ ...trip, legs, updatedBy: me.id, updatedAt: new Date().toISOString() }, trip.version); if (saved) setSheet(null) } finally { ownSave.current = false }
   })
 
   const Row = ({ label, value, sub, onClick, pill }: { label: string; value: React.ReactNode; sub?: React.ReactNode; onClick?: () => void; pill?: React.ReactNode }) => {

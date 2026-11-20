@@ -6,7 +6,7 @@ create extension if not exists pgcrypto;
 
 create table if not exists public.groups (
   id uuid primary key default gen_random_uuid(),
-  name text not null check (char_length(name) between 1 and 60),
+  name text not null check (char_length(btrim(name)) between 1 and 60),
   invite_code text not null unique default encode(gen_random_bytes(9), 'hex'),
   settings jsonb not null default '{}'::jsonb,
   created_at timestamptz not null default now()
@@ -16,7 +16,7 @@ create table if not exists public.members (
   id uuid primary key default gen_random_uuid(),
   group_id uuid not null references public.groups(id) on delete cascade,
   user_id uuid references auth.users(id) on delete set null,
-  name text not null check (char_length(name) between 1 and 40),
+  name text not null check (char_length(btrim(name)) between 1 and 40),
   color int not null default 0,
   home jsonb,                       -- valorizzata solo se la casa è condivisa col gruppo
   home_shared boolean not null default false,
@@ -132,7 +132,7 @@ revoke insert, update on public.members from authenticated, anon;
 grant insert (group_id, name, color) on public.members to authenticated;
 grant update (name, color, home, home_shared) on public.members to authenticated;
 revoke update on public.groups from authenticated, anon;
-grant update (name, settings) on public.groups to authenticated;
+grant update (name) on public.groups to authenticated; -- le impostazioni cambiano solo con set_group_toll
 revoke update on public.trips from authenticated, anon;
 grant update (status, starts_at, data, version, confirmed_at, updated_by) on public.trips to authenticated;
 revoke update on public.settlements from authenticated, anon;
@@ -167,6 +167,15 @@ create or replace function public.trips_guard() returns trigger language plpgsql
 declare me uuid := public.my_member(new.group_id);
 begin
   if not public.trip_values_ok(new.data) then raise exception 'Il viaggio contiene valori fuori scala (km o pedaggi).'; end if;
+  if new.starts_at > now() + interval '2 years' or new.starts_at < now() - interval '20 years' then raise exception 'La data del viaggio non è valida.'; end if;
+  -- chi guida, chi paga e chi è presente devono essere membri di questo gruppo
+  if exists (
+    select 1 from (
+      select jsonb_array_elements_text(case when jsonb_typeof(new.data->'presentIds') = 'array' then new.data->'presentIds' else '[]'::jsonb end) as mid
+      union all select l->>'driverId' from jsonb_array_elements(case when jsonb_typeof(new.data->'legs') = 'array' then new.data->'legs' else '[]'::jsonb end) l where l->>'driverId' is not null
+      union all select l->>'tollPayerId' from jsonb_array_elements(case when jsonb_typeof(new.data->'legs') = 'array' then new.data->'legs' else '[]'::jsonb end) l where l->>'tollPayerId' is not null
+    ) ids where not exists (select 1 from public.members m where m.group_id = new.group_id and m.id::text = ids.mid)
+  ) then raise exception 'Il viaggio cita persone che non sono nel gruppo.'; end if;
   if tg_op = 'INSERT' then
     new.version := 1;
     new.updated_at := now();
@@ -206,7 +215,8 @@ create trigger settlements_guard before insert on public.settlements for each ro
 
 create or replace function public.members_guard() returns trigger language plpgsql as $$
 begin
-  if (new.user_id is distinct from old.user_id or new.group_id <> old.group_id or new.left_at is distinct from old.left_at)
+  -- l'eliminazione di un account azzera user_id (on delete set null): è ammessa
+  if ((new.user_id is distinct from old.user_id and new.user_id is not null) or new.group_id <> old.group_id or new.left_at is distinct from old.left_at)
      and coalesce(current_setting('giro.rpc', true), '') <> '1' then
     raise exception 'campo non modificabile direttamente';
   end if;
@@ -291,9 +301,11 @@ begin
   if not public.is_member(p_group) then raise exception 'accesso negato'; end if;
   if p_key !~ '^[a-z-]+\|[a-z-]+$' then raise exception 'Coppia di caselli non valida'; end if;
   if p_value is not null and coalesce((p_value->>'cents')::numeric, -1) not between 1 and 50000 then raise exception 'Importo non valido'; end if;
+  -- autore e data li scrive il database: non si possono falsificare
   update public.groups set settings = case
-      when p_value is null then jsonb_set(settings, '{tolls}', coalesce(settings->'tolls', '{}'::jsonb) - p_key)
-      else jsonb_set(settings, '{tolls}', coalesce(settings->'tolls', '{}'::jsonb) || jsonb_build_object(p_key, p_value))
+      when p_value is null then jsonb_set(case when jsonb_typeof(settings) = 'object' then settings else '{}'::jsonb end, '{tolls}', coalesce(settings->'tolls', '{}'::jsonb) - p_key)
+      else jsonb_set(case when jsonb_typeof(settings) = 'object' then settings else '{}'::jsonb end, '{tolls}', coalesce(settings->'tolls', '{}'::jsonb) || jsonb_build_object(p_key,
+        jsonb_build_object('cents', round((p_value->>'cents')::numeric), 'by', public.my_member(p_group), 'on', to_char(now() at time zone 'utc', 'YYYY-MM-DD"T"HH24:MI:SS"Z"'))))
     end
   where id = p_group;
 end $$;

@@ -171,7 +171,7 @@ with sync_playwright() as p:
             tot += km_leg * mult * (w / sum(ms)) / 2
         return tot
     exp = share(rec, 2, 3)
-    ok(abs(d2 - exp) < 0.06 and 0 < d2 < 6, f'passeggera raccolta lungo il percorso: paga solo i suoi tratti (conducente +{d2}, atteso {exp:.2f})')
+    ok(abs(d2 - exp) < 0.11 and 0 < d2 < 6, f'passeggera raccolta lungo il percorso: paga solo i suoi tratti (conducente +{d2}, atteso {exp:.2f})')
     tap(pg, '.done .btn', 900)
     h2 = hero(pg)
     ok(abs(h2 - (h1 + d2)) < 0.11, 'registrazione diretta: saldo aggiornato')

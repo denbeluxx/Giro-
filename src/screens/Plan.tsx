@@ -19,12 +19,16 @@ type Step = 0 | 1 | 2
 const ROW = 60
 
 // ---- Bozza: l'uscita in preparazione sopravvive a ricarica o chiusura dell'app ----
-interface Draft { v: 1; ts: number; mode: 'plan' | 'record'; redoId?: ID; tripId: ID; step: Step; present: ID[]; unavailable: ID[]; dest: Named | null; when: string; driver: ID | null; undecided: boolean; hasReturn: boolean; legs: Leg[]; start: Named | null }
+interface Draft { v: 1; ts: number; mode: 'plan' | 'record'; redoId?: ID; tripId: ID; step: Step; present: ID[]; unavailable: ID[]; dest: Named | null; when: string; driver: ID | null; undecided: boolean; hasReturn: boolean; legs: Leg[]; start: Named | null; sig?: string }
 const draftKey = (g: ID) => `giro-draft-${g}`
 export function loadDraft(groupId: ID): Draft | null {
   try {
     const d = JSON.parse(localStorage.getItem(draftKey(groupId)) ?? 'null') as Draft | null
     if (!d || d.v !== 1 || Date.now() - d.ts > 24 * 3600e3 || !Array.isArray(d.present)) return null
+    const pt = (p: any) => !!p && Number.isFinite(p.lat) && Number.isFinite(p.lng) && typeof p.name === 'string'
+    const okLegs = Array.isArray(d.legs) && d.legs.every((l) => l && typeof l === 'object' && Array.isArray(l.stops) && l.stops.every(pt))
+    if (typeof d.when !== 'string' || isNaN(new Date(d.when).getTime()) || !okLegs || (d.dest != null && !pt(d.dest)) || (d.start != null && !pt(d.start))) return null
+    if (![0, 1, 2].includes(d.step) || (!d.dest && d.step > 0)) return null
     return d
   } catch { return null }
 }
@@ -99,11 +103,14 @@ export function Plan({ mode, edit, redo, at, resume }: { mode: 'plan' | 'record'
   const [busy, run] = useBusy()
   const tripId = useRef(draft0?.tripId ?? edit?.id ?? uid())
   const sigOf = (p = present, d = driver, ds = dest, r = hasReturn, st = start, u = unavailable) => JSON.stringify([[...p].sort(), d, ds && stopKey(ds), r, st && stopKey(st), [...u].sort()])
-  const builtSig = useRef(legs.length && (draft0 || edit) ? sigOf() : '')
+  // una bozza ricorda per quali scelte è stato costruito il suo percorso: se nel frattempo sono cambiate, si ricostruisce
+  const builtSig = useRef(!legs.length ? '' : draft0 ? draft0.sig ?? '' : edit ? sigOf() : '')
   const leaving = useRef(false)
   const inflight = useRef<Record<string, string>>({})
   const failed = useRef<Record<string, string>>({})
   const removedReturn = useRef<Leg | null>(null)
+  // bozza ripresa direttamente sul percorso ma costruita per scelte diverse: si ricalcola
+  useEffect(() => { if (!edit && step === 2 && legs.length && builtSig.current !== sigOf()) rebuild() }, []) // eslint-disable-line react-hooks/exhaustive-deps
   const snapshot = () => JSON.stringify([present, unavailable, dest, when, legs, driver, undecided, hasReturn])
   const initial = useRef(snapshot())
   const saved = useRef(false)
@@ -153,7 +160,7 @@ export function Plan({ mode, edit, redo, at, resume }: { mode: 'plan' | 'record'
   // ---- Salvataggio automatico della bozza (solo uscite nuove) ----
   useEffect(() => {
     if (edit || saved.current || (!dest && step === 0)) return
-    const d: Draft = { v: 1, ts: Date.now(), mode, redoId: redo?.id, tripId: tripId.current, step, present, unavailable, dest, when, driver, undecided, hasReturn, legs, start }
+    const d: Draft = { v: 1, ts: Date.now(), mode, redoId: redo?.id, tripId: tripId.current, step, present, unavailable, dest, when, driver, undecided, hasReturn, legs, start, sig: builtSig.current }
     try { localStorage.setItem(draftKey(data.group.id), JSON.stringify(d)) } catch { /* */ }
   }, [step, present, unavailable, dest, when, driver, undecided, hasReturn, legs, start]) // eslint-disable-line react-hooks/exhaustive-deps
 
@@ -190,7 +197,7 @@ export function Plan({ mode, edit, redo, at, resume }: { mode: 'plan' | 'record'
   // ---- Suggerimento e confronto del giro ----
   const recording = mode === 'record' && edit?.status !== 'planned'
   const balShown = useMemo(() => ({ ...bal, km: displayRound(bal.km) }), [bal])
-  const suggestion = useMemo(() => (recording ? null : suggestDriver(active, present, unavailable, balShown, fmtKmSigned)), [active, present, unavailable, balShown, recording])
+  const suggestion = useMemo(() => (recording ? null : suggestDriver(active, present, unavailable, bal, fmtKmSigned)), [active, present, unavailable, bal, recording])
   const noBase = (id: ID) => !usableHome(byId(id)) && !start
   useEffect(() => {
     if (step !== 1 || !dest) return
@@ -220,11 +227,12 @@ export function Plan({ mode, edit, redo, at, resume }: { mode: 'plan' | 'record'
     const { dest: ds, present: pr, driver: dv, start: st, prev } = opts
     const prevGo = prev.find((l) => l.kind === 'andata'), prevBack = prev.find((l) => l.kind === 'ritorno')
     const homesOk = (l?: Leg) => !l || l.stops.every((s) => !s.homeOf || !!usableHome(byId(s.homeOf)))
-    const same = !prev.length && redo && dv === redo.legs[0]?.driverId && [...pr].sort().join() === [...redo.presentIds].sort().join() && homesOk(redo.legs[0]) && homesOk(redo.legs[1])
+    const same = !prev.length && redo && !st && stopKey(ds) === stopKey(redo.dest) && dv === redo.legs[0]?.driverId && [...pr].sort().join() === [...redo.presentIds].sort().join() && homesOk(redo.legs[0]) && homesOk(redo.legs[1])
     const goExtras = extraStops((prevGo ?? redo?.legs[0])?.stops ?? [])
     const goStops = !dv ? [] : same ? redo!.legs[0].stops.map((s) => ({ ...s, id: uid() })) : withExtras('andata', buildStops('andata', data.members, pr, dv, ds, st), goExtras)
-    const go: Leg = { ...newLeg('andata', dv, goStops), designated: prevGo?.designated ?? redo?.legs[0]?.designated ?? false }
-    if (!opts.hasReturn) return [go]
+    // l'opzione riguarda chi guida: con un altro conducente riparte spenta
+    const go: Leg = { ...newLeg('andata', dv, goStops), designated: !!prevGo && prevGo.driverId === dv && prev.some((l) => l.designated) }
+    if (!opts.hasReturn) return [prevGo && prevGo.stops.length && [prevGo.stops[0], prevGo.stops[prevGo.stops.length - 1]].some((x) => stopKey(x) === stopKey(ds)) ? { ...go, tollPayerId: prevGo.tollPayerId && pr.includes(prevGo.tollPayerId) && prevGo.tollPayerId !== dv ? prevGo.tollPayerId : null, tollOverride: prevGo.tollOverride, tollGates: prevGo.tollGates ?? null } : go]
     // chi guida all'andata guida anche al ritorno, e «Non posso bere ostia» vale per tutta l'uscita
     const srcBack = prevBack ?? redo?.legs[1]
     let backStops: Stop[] = []
@@ -232,7 +240,13 @@ export function Plan({ mode, edit, redo, at, resume }: { mode: 'plan' | 'record'
       if (same && redo!.legs[1] && redo!.legs[1].driverId === dv) backStops = redo!.legs[1].stops.map((s) => ({ ...s, id: uid() }))
       else backStops = withExtras('ritorno', reverseStops(goStops), prevBack ? extraStops(prevBack.stops).filter((x) => !goExtras.some((g) => stopKey(g) === stopKey(x))) : [])
     }
-    return [go, { ...newLeg('ritorno', dv, backStops), designated: go.designated, time: prevBack?.time ?? srcBack?.time }]
+    // chi ha pagato e l'importo scritto a mano restano, se la persona c'è ancora e la destinazione è la stessa
+    const keep = (l: Leg, from?: Leg): Leg => {
+      if (!from) return l
+      const sameDest = !!from.stops.length && [from.stops[0], from.stops[from.stops.length - 1]].some((x) => stopKey(x) === stopKey(ds))
+      return { ...l, tollPayerId: from.tollPayerId && pr.includes(from.tollPayerId) && from.tollPayerId !== dv ? from.tollPayerId : null, ...(sameDest && from.tollOverride != null ? { tollOverride: from.tollOverride, tollGates: from.tollGates ?? null } : {}) }
+    }
+    return [keep(go, prevGo), keep({ ...newLeg('ritorno', dv, backStops), designated: go.designated, time: prevBack?.time ?? srcBack?.time }, prevBack)]
   }
   function rebuild(over: Partial<{ dest: Named; start: Named | null; hasReturn: boolean }> = {}) {
     const ds = over.dest ?? dest
@@ -289,7 +303,8 @@ export function Plan({ mode, edit, redo, at, resume }: { mode: 'plan' | 'record'
   const draft = (): Trip => ({
     id: tripId.current, groupId: data.group.id, status: live?.status ?? 'planned', version: live?.version ?? 1, startsAt: when,
     dest: dest!, presentIds: present, unavailableIds: unavailable,
-    legs: legs.map((l) => (l.kind === 'andata' ? { ...l, time: hhmm(when) } : l)),
+    // l'opzione vale per tutta l'uscita: mai una tratta sì e una no
+    legs: legs.map((l) => ({ ...(l.kind === 'andata' ? { ...l, time: hhmm(when) } : l), designated: legs.some((x) => x.designated) })),
     createdBy: edit?.createdBy ?? me.id, updatedBy: me.id, updatedAt: new Date().toISOString(), confirmedAt: live?.confirmedAt ?? null,
   })
   const fx = dest && legs.length ? tripEffect(draft()) : null
@@ -612,9 +627,8 @@ export function Plan({ mode, edit, redo, at, resume }: { mode: 'plan' | 'record'
               setHasReturn(v)
               setLegs((ls) => {
                 if (!v) { removedReturn.current = ls.find((l) => l.kind === 'ritorno') ?? null; return ls.filter((l) => l.kind === 'andata') }
-                const kept = removedReturn.current
-                const fits = kept && dest && kept.stops[0] && stopKey(kept.stops[0]) === stopKey(dest)
-                const back = fits ? kept! : { ...newLeg('ritorno', ls[0].driverId, reverseStops(ls[0].stops)), designated: ls[0].designated }
+                // il ritorno riparte sempre dalle tappe attuali dell'andata, con la stessa opzione; resta solo l'orario scelto prima
+                const back: Leg = { ...newLeg('ritorno', ls[0].driverId, reverseStops(ls[0].stops)), designated: ls.some((l) => l.designated), time: removedReturn.current?.time }
                 return [...ls.filter((l) => l.kind === 'andata'), back]
               })
               builtSig.current = sigOf(present, driver, dest, v)

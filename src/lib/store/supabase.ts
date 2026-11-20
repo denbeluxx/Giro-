@@ -13,7 +13,7 @@ export function friendly(msg: string): string {
   if (m.includes('duplicate key')) return 'Questa voce esiste già.'
   if (m.includes('check constraint')) return 'Alcuni valori non sono validi.'
   // i messaggi scritti da noi nello schema sono già in italiano
-  return /[àèéìòù]|questo|rimborso|invito|nome/i.test(msg) ? msg : 'Qualcosa non ha funzionato. Riprova.'
+  return /[àèéìòù]|questo|rimborso|invito|nome|viaggio|importo|caselli|membri|gruppo/i.test(msg) ? msg : 'Qualcosa non ha funzionato. Riprova.'
 }
 const must = <T,>(r: { data: T | null; error: { message: string } | null }): T => {
   if (r.error) throw new Error(friendly(r.error.message))

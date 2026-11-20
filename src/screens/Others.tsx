@@ -72,10 +72,10 @@ export function Places() {
       </div>
       {add && <Sheet title="Nuovo luogo" onClose={() => setAdd(false)}><PlaceSearch autoFocus onPick={(f) => { const dup = data.places.find((p) => Math.abs(p.lat - f.lat) < 0.0008 && Math.abs(p.lng - f.lng) < 0.0008); setAdd(false); if (dup) { toast(`«${dup.name}» è già tra i luoghi salvati`); setDraft(dup) } else setDraft({ id: uid(), name: f.name, address: f.address, lat: f.lat, lng: f.lng, kind: 'locale' }) }} /></Sheet>}
       {draft && <Sheet title={data.places.some((p) => p.id === draft.id) ? 'Modifica luogo' : 'Salva luogo'} onClose={() => setDraft(null)}
-        footer={<><Btn busy={busy} disabled={!draft.name.trim()} onClick={() => run(async () => { await store.savePlace(data.group.id, draft); await reload(); setDraft(null) })}>Salva</Btn>
+        footer={<><Btn busy={busy} disabled={!draft.name.trim()} onClick={() => run(async () => { await store.savePlace(data.group.id, { ...draft, name: draft.name.trim() }); await reload(); setDraft(null) })}>Salva</Btn>
           {data.places.some((p) => p.id === draft.id) && <Btn kind="danger" onClick={() => setConfirmDel(true)}>Elimina luogo</Btn>}</>}>
         <label className="label" htmlFor="pn">Nome</label>
-        <input id="pn" className="field" value={draft.name} onChange={(e) => setDraft({ ...draft, name: e.target.value })} />
+        <input id="pn" className="field" maxLength={60} value={draft.name} onChange={(e) => setDraft({ ...draft, name: e.target.value })} />
         {draft.address && <p className="foot">{draft.address}</p>}
         <div style={{ height: 16 }} />
         <Seg value={draft.kind} onChange={(kind) => setDraft({ ...draft, kind })} options={[{ v: 'locale', l: 'Locale' }, { v: 'ritrovo', l: 'Ritrovo' }, { v: 'altro', l: 'Altro' }]} />
@@ -168,12 +168,12 @@ export function Members() {
   const balNote = (id: ID) => {
     const km = displayRound(bal.km)[id] ?? 0, eur = bal.eur[id] ?? 0
     if (!km && !eur) return 'Il saldo è in pari.'
-    return `Ha ancora un saldo aperto: ${km ? fmtKmSigned(km) : ''}${km && eur ? ' e ' : ''}${eur ? fmtEurSigned(eur) + ' di pedaggi' : ''}.`
+    return `${id === me.id ? 'Hai' : 'Ha'} ancora un saldo aperto: ${km ? fmtKmSigned(km) : ''}${km && eur ? ' e ' : ''}${eur ? fmtEurSigned(eur) + ' di pedaggi' : ''}.`
   }
-  const dupName = (n: string, except?: ID | null) => active.some((m) => m.id !== except && m.name.trim().toLowerCase() === n.trim().toLowerCase())
+  const dupName = (n: string, except?: ID | null) => active.some((m) => m.id !== except && m.name.trim().replace(/\s+/g, ' ').toLowerCase() === n.trim().replace(/\s+/g, ' ').toLowerCase())
   const copy = async () => { try { await navigator.clipboard.writeText(link); toast('Link copiato') } catch { toast('Copia non riuscita: tieni premuto sul link') } }
   return (
-    <div className="screen"><Header title={data.group.name} />
+    <div className="screen"><Header title="Gruppo" />
       <div className="scroll">
         <div className="list" style={{ marginBottom: 14 }}><button className="row" onClick={() => { setName(data.group.name); setSheet('group') }}><span className="grow t">Nome del gruppo</span><span className="v">{data.group.name}</span><span className="chev"><Icon n="chev" size={18} /></span></button></div>
         <div className="card" style={{ padding: 16 }}>
@@ -201,7 +201,7 @@ export function Members() {
             <button className="row" onClick={() => { setName(me.name); setSheet('name') }}><span className="grow t">Nome</span><span className="v">{me.name}</span><span className="chev"><Icon n="chev" size={18} /></span></button>
             <button className="row" onClick={() => setSheet('home')}><span className="grow"><div className="t">Casa</div><div className="s">{me.home ? me.home.label : 'Serve per il giro delle case'}</div></span><span className="v">{me.home ? 'Cambia' : 'Imposta'}</span><span className="chev"><Icon n="chev" size={18} /></span></button>
             <div className="row"><div className="grow"><div className="t">Condividi casa con il gruppo</div><div className="s wrap">Gli altri possono usarla come tappa quando organizzano.</div></div>
-              <Switch on={me.homeShared} label="Condividi casa con il gruppo" onChange={(v) => run(async () => { await store.updateMe(data.group.id, { homeShared: v }); await reload() })} /></div>
+              <Switch on={me.homeShared && !!me.home} label="Condividi casa con il gruppo" onChange={(v) => run(async () => { await store.updateMe(data.group.id, { homeShared: v }); await reload() })} /></div>
           </div>
         </div>
 
