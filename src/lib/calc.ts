@@ -130,7 +130,7 @@ export function zeroSumRound(vals: Map<ID, number>, seed = ''): Map<ID, number> 
 /** Valori da mostrare arrotondati al passo (100 m = 0,1 km) con somma visibile zero. */
 export function displayRound(vals: Record<ID, number>, step = 100): Record<ID, number> {
   const scaled = new Map(Object.entries(vals).map(([id, v]) => [id, v / step]))
-  return Object.fromEntries([...zeroSumRound(scaled)].map(([id, v]) => [id, v * step]))
+  return Object.fromEntries([...zeroSumRound(scaled)].map(([id, v]) => [id, v * step || 0])) // niente «−0»
 }
 
 export interface LegEffect {

@@ -89,7 +89,7 @@ button.row:active, .row.tap:active { background: var(--fill); }
 .cta { position: absolute; left: 0; right: 0; bottom: var(--kb, 0px); padding: 14px var(--pad) calc(14px + var(--sab)); display: flex; gap: 10px; background: var(--glass); backdrop-filter: saturate(180%) blur(22px); -webkit-backdrop-filter: saturate(180%) blur(22px); border-top: 0.5px solid var(--sep); z-index: 20; }
 .field { width: 100%; min-height: 50px; padding: 0 16px; border-radius: var(--r-m); border: 0; background: var(--card); font-size: 17px; outline-offset: -2px; }
 .field.on-card { background: var(--fill); }
-.field::placeholder { color: var(--text3); }
+.field::placeholder { color: #9a9ea6; }
 .search { display: flex; align-items: center; gap: 8px; background: var(--fill); border-radius: 12px; padding: 0 0 0 12px; min-height: 44px; color: var(--text2); }
 .search:focus-within { outline: 3px solid var(--accent); outline-offset: 2px; }
 .search .clear { min-width: 44px; min-height: 44px; display: flex; align-items: center; justify-content: center; }
@@ -293,7 +293,7 @@ body, .app { background: #16171a; }
     radial-gradient(130% 70% at 20% 0%, #35373c 0%, #212226 50%, #16171a 100%);
   background-blend-mode: overlay, normal, normal;
 }
-:focus-visible { outline-color: #e6e9ed; }
+:focus-visible { outline-color: var(--app-hex); }
 
 /* testi */
 .title { font-weight: 600; letter-spacing: -0.02em; }
@@ -547,8 +547,6 @@ button.hchip:active { transform: scale(0.97); }
 .guide-ring { position: absolute; border-radius: 20px; pointer-events: none; box-shadow: 0 0 0 2px var(--app-hex), 0 0 22px rgb(var(--app) / 0.55), inset 0 0 18px rgb(var(--app) / 0.18);
   transition: left 0.35s var(--ease), top 0.35s var(--ease), width 0.35s var(--ease), height 0.35s var(--ease); }
 .guide-block { position: absolute; }
-.guide-tap { position: absolute; color: var(--app-hex); filter: drop-shadow(0 0 8px rgb(var(--app) / 0.9)); animation: guide-tap 1.3s ease-in-out infinite; pointer-events: none; }
-@keyframes guide-tap { 0%, 100% { transform: translateY(10px); opacity: 0.5; } 50% { transform: translateY(0); opacity: 1; } }
 .guide-card { position: absolute; left: 14px; right: 14px; max-width: 440px; margin: 0 auto; padding: 16px 18px 16px; border-radius: 24px; touch-action: pan-y;
   background: linear-gradient(155deg, #2a2c31, #1c1d21) padding-box, linear-gradient(135deg, #d9f9ff, var(--app-hex) 40%, #0f7f96 75%, #9eeeff) border-box; border: 1.5px solid transparent;
   box-shadow: 0 0 26px rgb(var(--app) / 0.25), 0 18px 50px rgba(0, 0, 0, 0.6); animation: guide-in 0.32s var(--ease) both; }
@@ -571,4 +569,6 @@ button.hchip:active { transform: scale(0.97); }
 .guide-notify { width: auto; margin-top: 12px; }
 .guide-ok { display: flex; align-items: center; gap: 6px; margin-top: 10px !important; color: var(--pos) !important; }
 .guide-note { margin-top: 10px !important; font-size: 13px !important; }
-.guide.still .guide-dim, .guide.still .guide-ring, .guide.still .guide-card, .guide.still .guide-tap { transition: none; animation: none; }
+.guide.still .guide-dim, .guide.still .guide-ring, .guide.still .guide-card { transition: none; animation: none; }
+.nt-card .field[readonly] { opacity: 0.75; box-shadow: none; background: rgba(0, 0, 0, 0.15); }
+.nt-card .field[aria-invalid='true'] { box-shadow: inset 0 0 0 1.5px rgb(var(--led-neg) / 0.8); }

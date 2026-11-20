@@ -148,7 +148,11 @@ export function supabaseStore(url: string, key: string): Store {
     },
     async savePush(s) { must(await sb.rpc('save_push', { p_endpoint: s.endpoint, p_p256dh: s.p256dh, p_auth: s.auth })) },
     async deletePush(endpoint) { await sb.from('push_subscriptions').delete().eq('endpoint', endpoint) },
-    async notify(body) { const { error } = await sb.functions.invoke('notify', { body }); if (error) console.warn('notifica non inviata', error) },
+    async notify(body) {
+      const { data, error } = await sb.functions.invoke('notify', { body })
+      if (error) { console.warn('notifica non inviata', error); return null }
+      return typeof data?.sent === 'number' ? data.sent : 0
+    },
     async updateGroup(groupId, patch) { return toGroup(must(await sb.from('groups').update(patch).eq('id', groupId).select().single())) },
   }
 }

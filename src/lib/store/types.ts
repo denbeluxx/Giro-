@@ -55,5 +55,6 @@ export interface Store {
   pushKey(): Promise<string>
   savePush(sub: { endpoint: string; p256dh: string; auth: string }): Promise<void>
   deletePush(endpoint: string): Promise<void>
-  notify(body: { type: 'new_trip' | 'shotgun'; tripId: ID } | { type: 'low'; groupId: ID; memberId: ID; km: number } | { type: 'test' }): Promise<void>
+  /** Restituisce quante notifiche sono partite, o null se il servizio non risponde. Per «low» il saldo lo ricalcola il servizio. */
+  notify(body: { type: 'new_trip' | 'shotgun'; tripId: ID } | { type: 'low'; groupId: ID; memberId: ID } | { type: 'test' }): Promise<number | null>
 }

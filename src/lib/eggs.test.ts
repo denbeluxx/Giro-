@@ -47,10 +47,13 @@ describe('easter egg', () => {
   })
   it('Shotgun: chi guida non lo chiama, il primo lo tiene, un posto non più valido torna libero', () => {
     const t = trip('t', new Date(Date.now() + 86400e3).toISOString(), 'A', ['A', 'B', 'C'], 10, undefined, 'planned')
-    expect(frontSeat(t, {}, 'A')).toEqual({ holder: undefined, canCall: false })
-    expect(frontSeat(t, {}, 'B')).toEqual({ holder: undefined, canCall: true })
-    expect(frontSeat(t, { t: 'B' }, 'C')).toEqual({ holder: 'B', canCall: false })
-    expect(frontSeat({ ...t, presentIds: ['A', 'C'] }, { t: 'B' }, 'C')).toEqual({ holder: undefined, canCall: true })
+    expect(frontSeat(t, {}, 'A')).toMatchObject({ holder: undefined, canCall: false, why: 'guidi' })
+    expect(frontSeat(t, {}, 'B')).toMatchObject({ holder: undefined, canCall: true })
+    expect(frontSeat(t, { t: 'B' }, 'C')).toMatchObject({ holder: 'B', canCall: false })
+    expect(frontSeat({ ...t, presentIds: ['A', 'C'] }, { t: 'B' }, 'C')).toMatchObject({ holder: undefined, canCall: true })
+    // chi ha lasciato il gruppo non tiene il posto
+    expect(frontSeat(t, { t: 'B' }, 'C', Date.now(), new Set(['A', 'C']))).toMatchObject({ holder: undefined, canCall: true })
+    expect(frontSeat(t, {}, 'Z').why).toBe('assente')
     expect(frontSeat({ ...t, status: 'confirmed' }, { t: 'B' }, 'C').canCall).toBe(false)
     expect(frontSeat({ ...t, startsAt: new Date(Date.now() - 3 * 3600e3).toISOString() }, {}, 'B').canCall).toBe(false)
   })

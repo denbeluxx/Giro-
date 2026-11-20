@@ -80,14 +80,16 @@ export function tiedForDriver(members: Member[], presentIds: ID[], unavailableId
 }
 
 /** Posto davanti («Shotgun!»): chi lo ha, e se io posso ancora chiamarlo.
- *  Un posto preso da chi poi non viene più o è diventato il conducente torna libero. */
+ *  Un posto preso da chi poi non viene più, è diventato il conducente o ha lasciato il gruppo torna libero.
+ *  why: perché non posso chiamarlo (per spiegarlo quando si arriva dal tasto della notifica). */
 /** Fino a 2 ore dopo l'orario di partenza (chi arriva tardi) si può ancora chiamare. */
 export const SHOTGUN_GRACE_MS = 2 * 3600e3
-export function frontSeat(t: Trip, shotguns: Record<ID, ID> | undefined, meId: ID, now = Date.now()): { holder?: ID; canCall: boolean } {
-  if (t.status !== 'planned') return { canCall: false }
+export function frontSeat(t: Trip, shotguns: Record<ID, ID> | undefined, meId: ID, now = Date.now(), active?: Set<ID>): { holder?: ID; canCall: boolean; why?: 'stato' | 'guidi' | 'assente' | 'tardi' } {
+  if (t.status !== 'planned') return { canCall: false, why: 'stato' }
   const drivers = new Set(t.legs.map((l) => l.driverId).filter(Boolean))
   const raw = shotguns?.[t.id]
-  const holder = raw && t.presentIds.includes(raw) && !drivers.has(raw) ? raw : undefined
+  const holder = raw && t.presentIds.includes(raw) && !drivers.has(raw) && (!active || active.has(raw)) ? raw : undefined
   const open = new Date(t.startsAt).getTime() > now - SHOTGUN_GRACE_MS
-  return { holder, canCall: open && !holder && t.presentIds.includes(meId) && !drivers.has(meId) }
+  const why = drivers.has(meId) ? 'guidi' : !t.presentIds.includes(meId) ? 'assente' : !open ? 'tardi' : undefined
+  return { holder, canCall: !holder && !why, why }
 }

@@ -19,9 +19,13 @@ self.addEventListener('notificationclick', (event) => {
   let url = new URL((event.notification.data && event.notification.data.url) || './', self.registration.scope).href
   // tasto «Shotgun!» sulla notifica: l'app apre l'uscita e prenota il posto davanti
   if (event.action === 'shotgun') url += (url.includes('?') ? '&' : '?') + 'shotgun=1'
-  event.waitUntil(self.clients.matchAll({ type: 'window', includeUncontrolled: true }).then((list) => {
-    for (const c of list) {
-      if (c.url.startsWith(self.registration.scope) && 'focus' in c) return c.navigate(url).then((w) => (w || c).focus())
+  event.waitUntil(self.clients.matchAll({ type: 'window', includeUncontrolled: true }).then(async (list) => {
+    const c = list.find((x) => x.url.startsWith(self.registration.scope))
+    if (c) {
+      // prima in primo piano (Android lo permette solo durante il clic), poi alla pagina giusta;
+      // se la finestra non si lascia guidare se ne apre una nuova
+      try { await c.focus() } catch (e) { /* */ }
+      try { if ('navigate' in c && (await c.navigate(url))) return } catch (e) { /* */ }
     }
     return self.clients.openWindow(url)
   }))

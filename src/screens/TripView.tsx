@@ -21,6 +21,8 @@ function fmtKmFine(m: number, t: Trip): string {
 
 /** Le uscite per cui il foglio di condivisione si è già aperto da solo. */
 const sharedOnce = new Set<ID>()
+/** Uscite già prenotate in automatico dal tasto «Shotgun!» della notifica (una volta sola per apertura dell'app). */
+const autoShotgunTried = new Set<ID>()
 
 export function ShareSheet({ trip, members, onClose }: { trip: Trip; members: Member[]; onClose: () => void }) {
   const toast = useToast()
@@ -93,7 +95,8 @@ export function TripView({ id, fresh, autoShotgun }: { id: ID; fresh?: boolean; 
     if ((sheet === 'km' || sheet === 'toll') && trip.version !== openedAt.current.version && !ownSave.current) { setSheet(null); toast('Viaggio aggiornato da un altro dispositivo: riapri per vedere i dati nuovi') }
   }, [sheet, trip?.version]) // eslint-disable-line react-hooks/exhaustive-deps
   // «Shotgun!»: il posto davanti va al primo che lo chiama
-  const seat = trip ? frontSeat(trip, data.shotguns, me.id) : { canCall: false }
+  const activeIds = useMemo(() => new Set(data.members.filter((m) => !m.leftAt).map((m) => m.id)), [data.members])
+  const seat = trip ? frontSeat(trip, data.shotguns, me.id, Date.now(), activeIds) : { canCall: false }
   const [claiming, setClaiming] = useState(false)
   const [justWon, setJustWon] = useState(false)
   const callShotgun = async () => {
@@ -109,13 +112,14 @@ export function TripView({ id, fresh, autoShotgun }: { id: ID; fresh?: boolean; 
       await app.reload()
     } catch (e: any) { toast(e?.message ?? 'Shotgun non riuscito. Riprova.') } finally { setClaiming(false) }
   }
-  // aperta dal tasto «Shotgun!» della notifica: si prenota subito
-  const autoDone = useRef(false)
+  // aperta dal tasto «Shotgun!» della notifica: si prova una volta sola (anche se la schermata viene ricostruita)
   useEffect(() => {
-    if (!autoShotgun || autoDone.current || !trip) return
-    autoDone.current = true
+    if (!autoShotgun || autoShotgunTried.has(id) || !trip) return
+    autoShotgunTried.add(id)
     if (seat.canCall) callShotgun()
-    else if (seat.holder && seat.holder !== me.id) toast(`Troppo tardi: Shotgun l'ha già chiamato ${byId(seat.holder)?.name ?? 'un altro'}`)
+    else if (seat.holder === me.id) toast('Il posto davanti è già tuo')
+    else if (seat.holder) toast(`Troppo tardi: Shotgun l'ha già chiamato ${byId(seat.holder)?.name ?? 'un altro'}`)
+    else toast(seat.why === 'guidi' ? 'Guidi tu: il posto davanti lo lasci agli altri.' : seat.why === 'assente' ? 'Non sei tra i presenti di questa uscita.' : seat.why === 'tardi' ? 'Troppo tardi: l\'uscita è già partita.' : 'Shotgun vale solo per le uscite in programma.')
   }, [trip?.id]) // eslint-disable-line react-hooks/exhaustive-deps
   if (!trip) return <div className="screen"><div className="nav"><button className="nav-btn" onClick={pop}><Icon n="back" />Indietro</button></div><div className="scroll"><Empty icon="alert" title="Uscita non trovata" text="Potrebbe appartenere a un altro gruppo o essere stata rimossa." /></div></div>
 

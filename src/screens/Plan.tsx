@@ -460,7 +460,7 @@ export function Plan({ mode, edit, redo, at, resume }: { mode: 'plan' | 'record'
     </div>
   )
   const exitSheet = sheet?.k === 'exit' && (
-    <Sheet title={edit ? 'Uscire senza salvare?' : 'Lasciare l\'uscita?'} onClose={() => setSheet(null)} onBackPress={() => exit()} footer={<><Btn kind="gray" onClick={() => setSheet(null)}>Continua a modificare</Btn><div style={{ height: 8 }} /><Btn kind="danger" onClick={exit}>{edit ? 'Esci senza salvare' : 'Elimina la bozza'}</Btn></>}>
+    <Sheet title={edit ? 'Uscire senza salvare?' : 'Lasciare l\'uscita?'} onClose={() => setSheet(null)} onBackPress={() => exit()} footer={<><Btn kind="gray" onClick={() => setSheet(null)}>Continua a modificare</Btn><div style={{ height: 8 }} /><Btn className="btn-danger" onClick={exit}>{edit ? 'Esci senza salvare' : 'Elimina la bozza'}</Btn></>}>
       <p style={{ margin: '0 4px', lineHeight: 1.4 }}>{edit ? 'Le modifiche fatte qui andranno perse.' : 'Presenti, destinazione e percorso scelti finora andranno persi.'}</p>
     </Sheet>
   )
@@ -688,7 +688,7 @@ export function Plan({ mode, edit, redo, at, resume }: { mode: 'plan' | 'record'
       <div className="cta col" style={{ zIndex: 40 }}>
         {recording && legs.some((l) => { const t = legToll(l); return (t.status === 'verify' && t.cents == null) || t.status === 'out' }) && <p className="cta-hint warn">Pedaggio senza importo: non sarà conteggiato finché non lo inserisci.</p>}
         {conflict && <p className="cta-hint warn">Qualcun altro ha appena modificato questa uscita. Salvando sostituisci le sue modifiche.</p>}
-        <Btn busy={busy} disabled={!canSave} onClick={save}>{edit ? 'Salva modifiche' : recording ? 'Registra viaggio' : 'Salva uscita'}</Btn>
+        <Btn busy={busy} disabled={!canSave} className={recording && !edit ? 'led-pos' : undefined} icon={recording && !edit ? 'check' : undefined} onClick={save}>{edit ? 'Salva modifiche' : recording ? 'Registra viaggio' : 'Salva uscita'}</Btn>
       </div>
 
       {sheet?.k === 'dest' && <Sheet title="Destinazione" onClose={() => setSheet(null)}><PlaceSearch autoFocus onPick={changeDest}><div className="list">{[...quick.recent.map((p) => [p, 'clock', 'Recente'] as const), ...quick.frequent.map((p) => [p, 'repeat', 'Ci andate spesso'] as const), ...quick.saved.map((p) => [p, 'pin', ''] as const)].map(([p, ic, sub]) => <button className="row" key={stopKey(p)} onClick={() => changeDest(p)}><span className="avatar ic-tile"><Icon n={ic} size={19} /></span><span className="grow"><div className="t">{p.name}</div><div className="s">{[sub, p.address].filter(Boolean).join(' · ')}</div></span></button>)}</div></PlaceSearch><p className="foot">Il giro viene ricalcolato; le tappe aggiunte a mano restano.</p></Sheet>}

@@ -7,9 +7,10 @@ import { Home } from './screens/Home'
 import { History, Members, Money, Places } from './screens/Others'
 import { Plan } from './screens/Plan'
 import { TripView } from './screens/TripView'
-import { Btn, Empty, Icon, Notice, Skel, ToastHost, openSheets, reducedMotion, useBusy, useToast } from './ui/kit'
+import { Btn, Empty, Icon, Notice, Skel, ToastHost, openSheets, reducedMotion, sheetNav, useBusy, useToast } from './ui/kit'
 import { Tabs } from './ui/Tabs'
 import { Guide, guideDone } from './ui/Guide'
+import { disablePush, syncPush } from './lib/push'
 
 export type Route =
   | { s: 'home' } | { s: 'members' } | { s: 'places' } | { s: 'history' } | { s: 'money' }
@@ -21,8 +22,8 @@ interface Ctx {
   reload: () => Promise<void>; push: (r: Route) => void; pop: () => void; replace: (r: Route) => void; home: () => void
   /** Aggiunge un livello alla cronologia (es. un passo del flusso), così il tasto Indietro del telefono lo annulla. */
   forward: () => void
-  /** Sezione aperta (0 = Saldi) e guida dell'app. */
-  tab: number; openGuide: () => void
+  /** Riapre la guida dell'app. */
+  openGuide: () => void
   /** Registra chi gestisce il tasto Indietro prima del cambio di schermata; restituisce la funzione per toglierlo. */
   onBack: (fn: () => boolean) => () => void
   /** Esce dalla schermata corrente togliendo anche n livelli della cronologia (es. i passi di un flusso). */
@@ -139,22 +140,27 @@ function GroupProvider({ groupId, groups, switchGroup, deepTrip, missing, clearD
   // ---- Navigazione legata alla cronologia: il tasto o il gesto Indietro del telefono torna indietro di un livello ----
   const level = useRef(0)
   const goingHome = useRef(false)
-  const pending = useRef<null | 'leave' | 'collapse'>(null)
+  // passi indietro fatti dall'app (non dall'utente), nell'ordine in cui arriveranno; scadono se il browser non li esegue
+  const pending = useRef<{ k: 'leave' | 'collapse'; at: number }[]>([])
+  const silent = (k: 'leave' | 'collapse', n: number) => { const s = Math.min(n, level.current); if (s <= 0) return false; pending.current.push({ k, at: Date.now() }); history.go(-s); return true }
   const handlers = useRef<(() => boolean)[]>([])
   const popStack = useCallback(() => transition('pop', () => setStack((s) => (s.length > 1 ? s.slice(0, -1) : s))), [])
   useEffect(() => {
     // dopo una ricarica a metà flusso la cronologia ha ancora i livelli di prima: torniamo alla base
     const d0 = typeof history.state?.d === 'number' ? history.state.d : 0
-    if (d0 > 0) { pending.current = 'collapse'; level.current = d0; history.go(-d0) }
+    if (d0 > 0) { level.current = d0; silent('collapse', d0) }
     else try { history.replaceState({ d: 0 }, '') } catch { /* */ }
     const onPop = (e: PopStateEvent) => {
       const d = typeof e.state?.d === 'number' ? e.state.d : 0
       if (goingHome.current) { goingHome.current = false; level.current = d; transition('pop', () => setStack([{ s: 'home' }])); return }
-      if (pending.current) { const k = pending.current; pending.current = null; level.current = d; if (k === 'leave') popStack(); return }
+      pending.current = pending.current.filter((p) => Date.now() - p.at < 2000)
+      const p = pending.current.shift()
+      if (p) { level.current = d; if (p.k === 'leave') popStack(); return }
       if (d >= level.current) { level.current = d; return }
       level.current = d
       // prima si chiude un foglio aperto, restando sulla stessa schermata
-      if (openSheets.length) { openSheets[openSheets.length - 1](); forwardRef.current(); return }
+      // il livello era del foglio aperto: si chiude il foglio
+      if (openSheets.length) { openSheets[openSheets.length - 1](); return }
       const h = handlers.current[handlers.current.length - 1]
       if (h && h()) return
       popStack()
@@ -172,15 +178,31 @@ function GroupProvider({ groupId, groups, switchGroup, deepTrip, missing, clearD
   tabState.current = { tab, depth: stack.length }
   const forwardRef = useRef(forward)
   forwardRef.current = forward
+  const guideEntry = useRef(false)
+  const openGuide = useCallback(() => { if (!guideEntry.current) { guideEntry.current = true; forwardRef.current() } setGuide(true) }, [])
+  const closeGuide = useCallback((viaBack?: boolean) => {
+    setGuide(false)
+    // si tolgono in un colpo solo i livelli della guida e delle sezioni, e si torna su Saldi
+    const k = (guideEntry.current && !viaBack ? 1 : 0) + (tabEntry.current ? 1 : 0)
+    guideEntry.current = false; tabEntry.current = false
+    setTab(0)
+    if (k > 0) silent('collapse', k)
+  }, [])
+  /** La guida mostra le sezioni senza aggiungere livelli alla cronologia. */
+  const showTab = useCallback((i: number) => setTab(i), [])
+  /** il dito sta lasciando Saldi: il livello di cronologia c'è già prima che lo scorrimento finisca */
+  const leaveHome = useCallback(() => { if (!tabEntry.current) { tabEntry.current = true; forwardRef.current() } }, [])
+  const [tabReq, setTabReq] = useState(0)
   const goTab = useCallback((i: number) => {
     setTab(i)
     if (i !== 0 && !tabEntry.current) { tabEntry.current = true; forwardRef.current() }
-    else if (i === 0 && tabEntry.current) { tabEntry.current = false; pending.current = 'collapse'; history.back() }
+    else if (i === 0 && tabEntry.current) { tabEntry.current = false; silent('collapse', 1) }
   }, [])
   useEffect(() => {
     const fn = () => {
-      if (tabState.current.depth !== 1 || tabState.current.tab === 0) return false
-      tabEntry.current = false; setTab(0); return true
+      if (tabState.current.depth !== 1 || (!tabEntry.current && tabState.current.tab === 0)) return false
+      // anche a metà di uno scorrimento: si torna su Saldi
+      tabEntry.current = false; setTab(0); setTabReq((n) => n + 1); return true
     }
     handlers.current.unshift(fn)
     return () => { handlers.current = handlers.current.filter((h) => h !== fn) }
@@ -192,16 +214,14 @@ function GroupProvider({ groupId, groups, switchGroup, deepTrip, missing, clearD
     forward(); transition('push', () => setStack((s) => [...s, r]))
   }, [forward, goTab])
   const pop = useCallback(() => { if (level.current > 0) history.back(); else popStack() }, [popStack])
-  const leave = useCallback((n: number) => {
-    const k = Math.min(n, level.current)
-    if (k <= 0) return popStack()
-    pending.current = 'leave'; history.go(-k)
-  }, [popStack])
-  const collapse = useCallback((n: number) => {
-    const k = Math.min(n, level.current)
-    if (k <= 0) return
-    pending.current = 'collapse'; history.go(-k)
-  }, [])
+  const leave = useCallback((n: number) => { if (!silent('leave', n)) popStack() }, [popStack]) // eslint-disable-line react-hooks/exhaustive-deps
+  const collapse = useCallback((n: number) => { silent('collapse', n) }, []) // eslint-disable-line react-hooks/exhaustive-deps
+  // fogli: ognuno aggiunge un livello quando si apre; chiuso dal pulsante, il livello si toglie
+  useEffect(() => {
+    sheetNav.open = () => forwardRef.current()
+    sheetNav.close = (byBack) => { if (!byBack) silent('collapse', 1) }
+    return () => { sheetNav.open = () => {}; sheetNav.close = () => {} }
+  }, []) // eslint-disable-line react-hooks/exhaustive-deps
   const replace = useCallback((r: Route) => transition('fade', () => setStack((s) => [...s.slice(0, -1), r])), [])
   const home = useCallback(() => {
     tabEntry.current = false; setTab(0)
@@ -217,7 +237,7 @@ function GroupProvider({ groupId, groups, switchGroup, deepTrip, missing, clearD
       if (before) {
         const after = before.trips.some((x) => x.id === saved.id) ? before.trips.map((x) => (x.id === saved.id ? saved : x)) : [saved, ...before.trips]
         const a = displayRound(balances(before.members, before.trips, before.settlements).km), b = displayRound(balances(before.members, after, before.settlements).km)
-        for (const m of before.members) if (!m.leftAt && m.userId && (a[m.id] ?? 0) > LOW_M && (b[m.id] ?? 0) <= LOW_M) store.notify({ type: 'low', groupId, memberId: m.id, km: (b[m.id] ?? 0) / 1000 }).catch(() => {})
+        for (const m of before.members) if (!m.leftAt && m.userId && (a[m.id] ?? 0) > LOW_M && (b[m.id] ?? 0) <= LOW_M) store.notify({ type: 'low', groupId, memberId: m.id }).catch(() => {})
       }
       return saved
     } catch (e) {
@@ -240,27 +260,38 @@ function GroupProvider({ groupId, groups, switchGroup, deepTrip, missing, clearD
     const map = new Map(data.members.map((m) => [m.id, m]))
     return {
       data, bal: balances(data.members, data.trips, data.settlements), me: map.get(data.meId)!, byId: (id) => (id ? map.get(id) : undefined),
-      active: data.members.filter((m) => !m.leftAt), reload, push, pop, replace, home, forward, onBack, leave, collapse, saveTrip, groups, switchGroup, tab, openGuide: () => setGuide(true),
-      signOut: () => { signingOut.current = true; store.signOut() },
+      active: data.members.filter((m) => !m.leftAt), reload, push, pop, replace, home, forward, onBack, leave, collapse, saveTrip, groups, openGuide,
+      // cambiando gruppo si azzera la cronologia di questo, così Indietro non resta «a vuoto»
+      switchGroup: (id) => { silent('collapse', level.current); switchGroup(id) },
+      // uscendo, questo telefono smette di ricevere le notifiche dell'account
+      signOut: () => { signingOut.current = true; disablePush().catch(() => {}).finally(() => store.signOut()) },
     }
-  }, [data, reload, push, pop, replace, home, forward, onBack, leave, collapse, saveTrip, groups, switchGroup, tab])
+  }, [data, reload, push, pop, replace, home, forward, onBack, leave, collapse, saveTrip, groups, switchGroup, openGuide])
+  // le sezioni sono sempre gli stessi elementi: cambiare sezione non ridisegna le pagine (gruppi con centinaia di uscite)
+  const pages = useMemo(() => TABS.map((k) => ({
+    key: k, label: TAB_LABEL[k],
+    page: k === 'home' ? <Home /> : k === 'history' ? <History /> : k === 'money' ? <Money /> : k === 'places' ? <Places /> : <Members />,
+  })), [])
   const ready = !!ctx && stack.length === 1 && !deepTrip
+  const hadMissing = useRef(false)
+  if (missing) hadMissing.current = true
+  // telefono già iscritto alle notifiche: l'iscrizione segue l'account con cui si è entrati
+  const synced = useRef(false)
+  useEffect(() => { if (ctx && !synced.current) { synced.current = true; syncPush().catch(() => {}) } }, [ctx])
   useEffect(() => {
     if (!ready || guideDone()) return
-    const id = setTimeout(() => setGuide(true), 700)
+    // dopo l'avviso «il link apre un'uscita che non esiste» si lascia il tempo di leggerlo
+    const id = setTimeout(openGuide, hadMissing.current ? 3600 : 700)
     return () => clearTimeout(id)
-  }, [ready])
+  }, [ready]) // eslint-disable-line react-hooks/exhaustive-deps
 
   if (err && !data) return <div className="screen"><div className="scroll" style={{ paddingTop: 120 }}><Empty icon="alert" title="Gruppo non disponibile" text={err}><Btn onClick={reload}>Riprova</Btn><div style={{ height: 10 }} /><Btn kind="gray" onClick={() => switchGroup(null)}>I miei gruppi</Btn></Empty></div></div>
   if (!ctx) return <Splash />
   const r = stack[stack.length - 1]
   return (
     <C.Provider value={ctx}>
-      {(TABS as readonly string[]).includes(r.s) && <Tabs index={tab} onIndex={goTab} tabs={TABS.map((k) => ({
-        key: k, label: TAB_LABEL[k],
-        page: k === 'home' ? <Home /> : k === 'history' ? <History /> : k === 'money' ? <Money /> : k === 'places' ? <Places /> : <Members />,
-      }))} />}
-      {guide && (TABS as readonly string[]).includes(r.s) && <Guide onClose={() => setGuide(false)} />}
+      {(TABS as readonly string[]).includes(r.s) && <Tabs index={tab} req={tabReq} onIndex={(i, user) => (user ? goTab(i) : setTab(i))} onLeave={leaveHome} tabs={pages} />}
+      {guide && (TABS as readonly string[]).includes(r.s) && <Guide onClose={closeGuide} showTab={showTab} />}
       {r.s === 'plan' && <Plan key={`${r.edit?.id ?? r.redo?.id ?? 'new'}-${stack.length}`} mode={r.mode} edit={r.edit} redo={r.redo} at={r.at} resume={r.resume} />}
       {r.s === 'trip' && <TripView key={r.id} id={r.id} fresh={r.fresh} autoShotgun={r.shotgun} />}
     </C.Provider>
@@ -317,7 +348,7 @@ function Groups({ groups, onOpen, onCreated }: { groups: GroupSummary[]; onOpen:
           <Btn busy={busy} disabled={!name.trim() || !me.trim()}>Crea gruppo</Btn>
         </form>
       </div>
-      {store.mode === 'cloud' && <><div style={{ height: 20 }} /><Btn kind="danger" onClick={() => { signingOut.current = true; store.signOut() }}>Esci da questo dispositivo</Btn></>}
+      {store.mode === 'cloud' && <><div style={{ height: 20 }} /><Btn kind="danger" onClick={() => { signingOut.current = true; disablePush().catch(() => {}).finally(() => store.signOut()) }}>Esci da questo dispositivo</Btn></>}
     </div></div>
   )
 }

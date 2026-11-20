@@ -58,7 +58,7 @@ export function Home() {
         <span className="grow" style={{ flex: 1, minWidth: 0 }}>
           <div className="kicker">{hot ? 'Conferma il viaggio' : 'Prossima uscita'}</div>
           <div className="bt">{t.dest.name}</div>
-          <div className="s">{fmtDate(t.startsAt)} {fmtTime(t.startsAt)} · {d ? `${hot ? 'guidava' : 'guida'} ${d.name}` : 'conducente da decidere'}{!hot && (() => { const h = frontSeat(t, data.shotguns, me.id).holder; return h ? ` · davanti ${h === me.id ? 'tu' : byId(h)?.name}` : '' })()}</div>
+          <div className="s">{fmtDate(t.startsAt)} {fmtTime(t.startsAt)} · {d ? `${hot ? 'guidava' : 'guida'} ${d.name}` : 'conducente da decidere'}{!hot && (() => { const h = frontSeat(t, data.shotguns, me.id, Date.now(), new Set(active.map((m) => m.id))).holder; return h ? ` · davanti ${h === me.id ? 'tu' : byId(h)?.name}` : '' })()}</div>
         </span>
         <Icon n="chev" size={18} />
       </button>

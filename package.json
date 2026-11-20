@@ -8,7 +8,8 @@
     "build": "tsc --noEmit && vite build",
     "build:sim": "VITE_SIM=1 vite build --mode sim --outDir dist-sim",
     "preview": "vite preview",
-    "test": "vitest run"
+    "test": "vitest run",
+    "build:notify": "node supabase/functions/notify/build.mjs"
   },
   "dependencies": {
     "@fontsource/space-grotesk": "^5.3.0",

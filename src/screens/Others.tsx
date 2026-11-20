@@ -1,4 +1,4 @@
-import { useState } from 'react'
+import { useEffect, useMemo, useRef, useState } from 'react'
 import { useApp } from '../app'
 import { displayRound, settleUp, tripEffect } from '../lib/calc'
 import { fmtDate, fmtDateYear, fmtEur, fmtEurSigned, fmtKm, fmtKmSigned, parseNum } from '../lib/format'
@@ -13,6 +13,7 @@ import { Avatar, Btn, Empty, Icon, Seg, Sheet, Switch, useBusy, useToast, led } 
 import { PlaceSearch } from '../ui/PlaceSearch'
 import { useInTabs } from '../ui/Tabs'
 import { NotifyTextsSheet } from './NotifyTexts'
+import { textsEditor } from '../lib/notifyTexts'
 
 export function Header({ title, right }: { title: string; right?: React.ReactNode }) {
   const { pop } = useApp()
@@ -27,16 +28,32 @@ export function StatusPill({ t }: { t: Trip }) {
   return t.startsAt < new Date().toISOString() ? <span className="pill warn">Da confermare</span> : <span className="pill accent">In programma</span>
 }
 
+const PAGE = 60
+/** quante uscite sono già mostrate: tornando da un'uscita lo storico resta dov'era */
+let historyShown = PAGE
 export function History() {
   const { data, byId, push } = useApp()
-  const trips = [...data.trips].sort((a, b) => (a.startsAt > b.startsAt ? -1 : 1))
-  const record = recordTripId(data.trips)
+  // calcolati una volta per versione dei dati: lo storico può avere centinaia di uscite
+  const trips = useMemo(() => [...data.trips].sort((a, b) => (a.startsAt > b.startsAt ? -1 : 1)), [data.trips])
+  const effects = useMemo(() => new Map(trips.map((t) => [t.id, tripEffect(t)])), [trips])
+  const record = useMemo(() => recordTripId(data.trips), [data.trips])
+  // le uscite si mostrano a blocchi mentre si scorre: lo storico resta leggero anche dopo anni di uscite
+  const [shown, setShown] = useState(() => historyShown)
+  historyShown = shown
+  const more = useRef<HTMLDivElement>(null)
+  useEffect(() => {
+    const el = more.current
+    if (!el || shown >= trips.length || typeof IntersectionObserver === 'undefined') return
+    const io = new IntersectionObserver((e) => { if (e.some((x) => x.isIntersecting)) setShown((n) => n + PAGE) }, { rootMargin: '600px' })
+    io.observe(el)
+    return () => io.disconnect()
+  }, [shown, trips.length])
   return (
     <div className="screen"><Header title="Storico" />
       <div className="scroll">
-        <div data-guide="storico">{!trips.length ? <Empty icon="history" title="Nessuna uscita" text="Le uscite organizzate e i viaggi confermati compaiono qui, con percorso e calcoli."><Btn onClick={() => push({ s: 'plan', mode: 'plan' })}>Organizza uscita</Btn></Empty> : (
-          <div className="list">{trips.map((t) => {
-            const e = tripEffect(t)
+        <div>{!trips.length ? <Empty icon="history" title="Nessuna uscita" text="Le uscite organizzate e i viaggi confermati compaiono qui, con percorso e calcoli."><Btn onClick={() => push({ s: 'plan', mode: 'plan' })}>Organizza uscita</Btn></Empty> : (
+          <div className="list">{trips.slice(0, shown).map((t) => {
+            const e = effects.get(t.id)!
             const drivers = [...new Set(t.legs.map((l) => l.driverId).filter(Boolean))].map((id) => byId(id)?.name).join(' e ')
             return (
               <button className={`row${t.status === 'cancelled' ? ' cancelled' : ''}`} key={t.id} onClick={() => push({ s: 'trip', id: t.id })}>
@@ -47,6 +64,7 @@ export function History() {
             )
           })}</div>
         )}</div>
+        {shown < trips.length && <div ref={more} className="more-sentinel"><button className="link-under" onClick={() => setShown((n) => n + PAGE)}>Mostra altre uscite ({trips.length - shown})</button></div>}
       </div>
     </div>
   )
@@ -217,8 +235,8 @@ export function Members() {
           <div className="list"><div className="row"><span className="row-ic"><Icon n="bell" /></span><div className="grow"><div className="t">Notifiche su questo telefono</div><div className="s wrap">{PUSH_TEXT[push$]}</div></div>
             {(push$ === 'on' || push$ === 'off') && <Switch on={push$ === 'on'} label="Notifiche su questo telefono" onChange={(v) => run(async () => { const s = v ? await enablePush() : await disablePush(); setPush(s); toast(s === 'on' ? 'Notifiche attive su questo telefono' : s === 'denied' ? 'Notifiche bloccate: riattivale dalle impostazioni del telefono' : 'Notifiche disattivate') })} />}</div>
             <button className="row" onClick={() => setSheet('texts')}><span className="row-ic"><Icon n="edit" /></span><span className="grow"><div className="t">Testi delle notifiche</div>
-              <div className="s">{data.group.owner && data.group.owner === me.userId ? (data.group.settings.notifyTexts ? 'Scritti da te' : 'Scrivili tu') : `Li sceglie ${data.members.find((m) => m.userId === data.group.owner)?.name ?? 'chi ha creato il gruppo'}`}</div></span><span className="chev"><Icon n="chev" size={18} /></span></button></div>
-          {push$ === 'on' && <p className="foot">Ogni telefono si attiva a parte. Il promemoria dei viaggi da confermare arriva la mattina dopo l'uscita. <button className="link" onClick={() => { store.notify({ type: 'test' }).catch(() => {}); toast('Notifica di prova inviata') }}>Invia una prova</button></p>}
+              <div className="s">{(() => { const ed = textsEditor(data.group, data.members); return ed && ed === me.userId ? (data.group.settings.notifyTexts ? 'Scritti da te' : 'Scrivili tu') : `Li sceglie ${data.members.find((m) => m.userId === ed)?.name ?? 'chi ha creato il gruppo'}` })()}</div></span><span className="chev"><Icon n="chev" size={18} /></span></button></div>
+          {push$ === 'on' && <p className="foot">Ogni telefono si attiva a parte. Il promemoria dei viaggi da confermare arriva la mattina dopo l'uscita. <button className="link" onClick={async () => { const n = await store.notify({ type: 'test' }).catch(() => null); toast(n == null ? 'Il servizio notifiche non risponde: riprova tra poco' : n > 0 ? 'Notifica di prova inviata' : 'Prova non partita: riprova tra un minuto') }}>Invia una prova</button></p>}
         </div>}
 
         {store.mode === 'demo' && <div className="section"><div className="section-h"><h2>Modalità dimostrativa</h2></div>

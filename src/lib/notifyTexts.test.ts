@@ -1,4 +1,6 @@
 import { readFileSync } from 'node:fs'
+// @ts-expect-error script JS senza tipi
+import { buildNotify } from '../../supabase/functions/notify/build.mjs'
 import { describe, expect, it } from 'vitest'
 import { NOTIFY_DEFAULTS, NOTIFY_INFO, fillText, preview, textFor, unknownVars } from './notifyTexts'
 
@@ -21,11 +23,13 @@ describe('testi delle notifiche', () => {
     expect(unknownVars('low', '{dove} {km}')).toEqual(['dove'])
     expect(NOTIFY_INFO.new_trip.vars.map((v) => v.k)).toContain('guida')
   })
-  it('il servizio notifiche ha gli stessi testi predefiniti dell\'app', () => {
-    const src = readFileSync(new URL('../../supabase/functions/notify/index.ts', import.meta.url), 'utf8')
-    for (const t of Object.values(NOTIFY_DEFAULTS)) {
-      expect(src).toContain(JSON.stringify(t.title).slice(1, -1))
-      expect(src).toContain(JSON.stringify(t.body).slice(1, -1))
-    }
+  it('parole come {constructor} o {__proto__} restano come sono', () => {
+    expect(fillText('{constructor} {toString} {__proto__}', { chi: 'x' })).toBe('{constructor} {toString} {__proto__}')
+  })
+  it('il file da pubblicare del servizio notifiche è aggiornato (npm run build:notify)', () => {
+    const fresh = buildNotify(false)
+    const published = readFileSync(new URL('../../supabase/functions/notify/index.ts', import.meta.url), 'utf8')
+    expect(published).toBe(fresh)
+    for (const t of Object.values(NOTIFY_DEFAULTS)) { expect(published).toContain(t.title); expect(published).toContain(t.body) }
   })
 })

@@ -341,15 +341,22 @@ drop policy if exists push_select on public.push_subscriptions;
 drop policy if exists push_delete on public.push_subscriptions;
 create policy push_select on public.push_subscriptions for select to authenticated using (user_id = auth.uid());
 create policy push_delete on public.push_subscriptions for delete to authenticated using (user_id = auth.uid());
-revoke insert, update on public.push_subscriptions from authenticated, anon;
+revoke insert, update, truncate on public.push_subscriptions from authenticated, anon;
 
 -- Un dispositivo appartiene a chi lo ha iscritto per ultimo (stesso telefono, account diverso).
 create or replace function public.save_push(p_endpoint text, p_p256dh text, p_auth text) returns void
 language plpgsql security definer set search_path = public as $$
 begin
   if auth.uid() is null then raise exception 'accesso richiesto'; end if;
+  -- solo i servizi di notifica dei telefoni e dei browser (Google, Apple, Mozilla, Microsoft)
+  if p_endpoint !~ '^https://([a-z0-9-]+\.)*(googleapis\.com|google\.com|push\.apple\.com|push\.services\.mozilla\.com|notify\.windows\.com)/' then
+    raise exception 'Indirizzo di notifica non valido.';
+  end if;
   insert into public.push_subscriptions(endpoint, user_id, p256dh, auth) values (p_endpoint, auth.uid(), p_p256dh, p_auth)
   on conflict (endpoint) do update set user_id = excluded.user_id, p256dh = excluded.p256dh, auth = excluded.auth, created_at = now();
+  -- al massimo 10 dispositivi per persona: i più vecchi escono
+  delete from public.push_subscriptions where user_id = auth.uid() and endpoint in (
+    select endpoint from public.push_subscriptions where user_id = auth.uid() order by created_at desc offset 10);
 end $$;
 
 -- Il posto davanti: lo prende il primo che chiama «Shotgun!».
@@ -362,13 +369,13 @@ create table if not exists public.trip_shotgun (
 alter table public.trip_shotgun enable row level security;
 drop policy if exists shotgun_select on public.trip_shotgun;
 create policy shotgun_select on public.trip_shotgun for select to authenticated using (public.is_member(group_id));
-revoke insert, update, delete on public.trip_shotgun from authenticated, anon;
+revoke insert, update, delete, truncate on public.trip_shotgun from authenticated, anon;
 
 create or replace function public.claim_shotgun(p_trip uuid) returns jsonb
 language plpgsql security definer set search_path = public as $$
 declare t record; me uuid;
 begin
-  select id, group_id, status, starts_at, data into t from public.trips where id = p_trip;
+  select id, group_id, status, starts_at, data into t from public.trips where id = p_trip for update;
   if not found or not public.is_member(t.group_id) then raise exception 'accesso negato'; end if;
   me := public.my_member(t.group_id);
   if t.status <> 'planned' then raise exception 'Shotgun vale solo per le uscite in programma.'; end if;
@@ -379,7 +386,8 @@ begin
   end if;
   -- un posto preso da chi nel frattempo non viene più o è diventato il conducente torna libero
   delete from public.trip_shotgun s where s.trip_id = p_trip and (not (t.data->'presentIds') ? s.member_id::text
-    or exists (select 1 from jsonb_array_elements(t.data->'legs') l where l->>'driverId' = s.member_id::text));
+    or exists (select 1 from jsonb_array_elements(t.data->'legs') l where l->>'driverId' = s.member_id::text)
+    or exists (select 1 from public.members m where m.id = s.member_id and m.left_at is not null));
   insert into public.trip_shotgun(trip_id, group_id, member_id) values (p_trip, t.group_id, me) on conflict (trip_id) do nothing;
   return (select jsonb_build_object('member_id', member_id, 'mine', member_id = me) from public.trip_shotgun where trip_id = p_trip);
 end $$;
@@ -396,13 +404,23 @@ revoke all on public.notify_log from authenticated, anon;
 -- Gruppi creati prima di questa colonna: il creatore è il primo membro con un account
 update public.groups g set owner = (select m.user_id from public.members m where m.group_id = g.id and m.user_id is not null order by m.joined_at limit 1) where g.owner is null;
 
+-- Chi sceglie i testi: il creatore; se ha lasciato il gruppo, il membro con account che è nel gruppo da più tempo.
+create or replace function public.texts_editor(p_group uuid) returns uuid
+language sql stable security definer set search_path = public as $$
+  select coalesce(
+    (select g.owner from public.groups g where g.id = p_group and exists (select 1 from public.members m where m.group_id = g.id and m.user_id = g.owner and m.left_at is null)),
+    (select m.user_id from public.members m where m.group_id = p_group and m.user_id is not null and m.left_at is null order by m.joined_at, m.id limit 1))
+$$;
+revoke all on function public.texts_editor(uuid) from public, anon;
+grant execute on function public.texts_editor(uuid) to authenticated;
+
 -- Testi delle notifiche, scelti da chi ha creato il gruppo. null o {} = testi predefiniti.
 create or replace function public.set_notify_texts(p_group uuid, p_texts jsonb) returns void
 language plpgsql security definer set search_path = public as $$
 declare k text; v jsonb;
 begin
   if not public.is_member(p_group) then raise exception 'accesso negato'; end if;
-  if (select owner from public.groups where id = p_group) is distinct from auth.uid() then
+  if public.texts_editor(p_group) is distinct from auth.uid() then
     raise exception 'I testi delle notifiche li può cambiare solo chi ha creato il gruppo.';
   end if;
   if p_texts is null or p_texts = '{}'::jsonb then
@@ -413,7 +431,7 @@ begin
   for k, v in select * from jsonb_each(p_texts) loop
     if k not in ('new_trip', 'shotgun', 'confirm', 'low') or jsonb_typeof(v) <> 'object'
       or jsonb_typeof(v->'title') is distinct from 'string' or jsonb_typeof(v->'body') is distinct from 'string'
-      or char_length(btrim(v->>'title')) not between 1 and 80 or char_length(v->>'body') > 200
+      or char_length(v->>'title') > 80 or regexp_replace(v->>'title', '[\s\u00a0\u200b\u200c\u200d\ufeff]', '', 'g') = '' or char_length(v->>'body') > 200
       or (select count(*) from jsonb_object_keys(v)) <> 2 then
       raise exception 'Testi non validi: titolo da 1 a 80 caratteri, messaggio fino a 200.';
     end if;

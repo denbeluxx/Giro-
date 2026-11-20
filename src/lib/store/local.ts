@@ -2,6 +2,7 @@ import { buildStops, newLeg, reverseStops } from '../plan'
 import { estimateRoute } from '../routing'
 import { uid, type Group, type GroupData, type ID, type Leg, type Member, type Place, type Trip } from '../types'
 import { sanitizeTrips } from '../validate'
+import { textsEditor } from '../notifyTexts'
 import { ConflictError, type Store } from './types'
 
 const KEY = 'shotgun-demo-v5'
@@ -159,7 +160,7 @@ export const localStore: Store = {
   async updateMe(groupId, patch) { const db = read(); const g = db.groups[groupId]; const m = g.members.find((x) => x.id === meOf(g))!; Object.assign(m, patch); write(db) },
   async setNotifyTexts(groupId, texts) {
     const db = read(), g = db.groups[groupId]
-    if (g.members.find((m) => m.id === meOf(g))?.userId !== (g.group.owner ?? 'demo-user')) throw new Error('I testi delle notifiche li può cambiare solo chi ha creato il gruppo.')
+    if (g.members.find((m) => m.id === meOf(g))?.userId !== textsEditor({ owner: g.group.owner ?? 'demo-user' }, g.members)) throw new Error('I testi delle notifiche li può cambiare solo chi ha creato il gruppo.')
     const s = { ...g.group.settings }
     if (texts && Object.keys(texts).length) s.notifyTexts = texts; else delete s.notifyTexts
     g.group.settings = s; write(db)
@@ -174,10 +175,10 @@ export const localStore: Store = {
     if (new Date(t.startsAt).getTime() < Date.now() - 2 * 3600e3) throw new Error('Troppo tardi: l\'uscita è già partita.')
     g.shotguns = g.shotguns ?? {}
     const cur = g.shotguns[tripId]
-    if (!cur || !t.presentIds.includes(cur) || t.legs.some((l) => l.driverId === cur)) { g.shotguns[tripId] = me; write(db) }
+    if (!cur || !t.presentIds.includes(cur) || t.legs.some((l) => l.driverId === cur) || g.members.some((m) => m.id === cur && m.leftAt)) { g.shotguns[tripId] = me; write(db) }
     return g.shotguns[tripId]
   },
   async pushKey() { throw new Error('Le notifiche funzionano con l\'app collegata al gruppo vero, non con i dati dimostrativi.') },
-  async savePush() {}, async deletePush() {}, async notify() {},
+  async savePush() {}, async deletePush() {}, async notify() { return 0 },
   async updateGroup(groupId, patch) { const db = read(); const g = db.groups[groupId]; Object.assign(g.group, patch); write(db); return g.group },
 }

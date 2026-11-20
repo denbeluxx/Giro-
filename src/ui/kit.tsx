@@ -70,21 +70,36 @@ export const reducedMotion = () => typeof matchMedia !== 'undefined' && matchMed
 
 /** Fogli aperti, dal più vecchio al più recente: il tasto Indietro del telefono chiude l'ultimo. */
 export const openSheets: (() => void)[] = []
+/** Ogni foglio aperto ha il suo livello di cronologia (così Indietro lo chiude invece di uscire dall'app). Li collega l'app. */
+export const sheetNav = { open: () => {}, close: (_byBack: boolean) => {} }
 
 /** Foglio modale dal basso: si chiude con trascinamento, tocco sullo sfondo, Esc o tasto Indietro. */
-export function Sheet({ title, onClose, children, footer, onBackPress }: { title: string; onClose: () => void; children: ReactNode; footer?: ReactNode; onBackPress?: () => void }) {
+/** guard: se restituisce false il foglio resta aperto (es. modifiche non salvate da confermare). */
+export function Sheet({ title, onClose, children, footer, onBackPress, guard }: { title: string; onClose: () => void; children: ReactNode; footer?: ReactNode; onBackPress?: () => void; guard?: () => boolean }) {
   const [out, setOut] = useState(false)
   const ref = useRef<HTMLDivElement>(null)
   const drag = useRef<{ y: number; dy: number } | null>(null)
   // chi aveva il fuoco prima dell'apertura (letto al primo disegno, prima dell'autoFocus del campo)
   const opener = useRef<HTMLElement | null>(typeof document !== 'undefined' ? (document.activeElement as HTMLElement | null) : null)
-  const close = useCallback(() => { if (reducedMotion()) return onClose(); setOut(true); setTimeout(onClose, 220) }, [onClose])
+  const guardRef = useRef(guard)
+  guardRef.current = guard
+  const byBack = useRef(false)
+  const close = useCallback(() => {
+    if (guardRef.current?.() === false) {
+      // resta aperto (es. modifiche da confermare): se a chiederlo era il tasto Indietro, si rimette il livello
+      if (byBack.current) { byBack.current = false; sheetNav.open() }
+      return
+    }
+    if (reducedMotion()) return onClose()
+    setOut(true); setTimeout(onClose, 220)
+  }, [onClose])
   const backRef = useRef<() => void>(() => {})
   backRef.current = onBackPress ?? close
   useEffect(() => {
-    const fn = () => backRef.current()
+    const fn = () => { byBack.current = true; backRef.current() }
     openSheets.push(fn)
-    return () => { const i = openSheets.lastIndexOf(fn); if (i >= 0) openSheets.splice(i, 1) }
+    sheetNav.open()
+    return () => { const i = openSheets.lastIndexOf(fn); if (i >= 0) openSheets.splice(i, 1); sheetNav.close(byBack.current) }
   }, [])
   useEffect(() => {
     const before = opener.current
@@ -115,7 +130,7 @@ export function Sheet({ title, onClose, children, footer, onBackPress }: { title
     const dy = drag.current.dy
     drag.current = null
     ref.current.classList.remove('dragging')
-    if (dy > 90) { ref.current.style.transition = 'transform .22s ease-in'; ref.current.style.transform = 'translateY(100%)'; setTimeout(onClose, 200) }
+    if (dy > 90 && guardRef.current?.() !== false) { ref.current.style.transition = 'transform .22s ease-in'; ref.current.style.transform = 'translateY(100%)'; setTimeout(onClose, 200) }
     else { ref.current.style.transition = 'transform .3s cubic-bezier(.32,.72,0,1)'; ref.current.style.transform = ''; setTimeout(() => ref.current && (ref.current.style.transition = ''), 300) }
   }
   return (
@@ -177,7 +192,7 @@ export function useBusy() {
   const run = useCallback(async (fn: () => Promise<void>) => {
     if (lock.current) return
     lock.current = true; setBusy(true)
-    try { await fn() } catch (e: any) { toast(e?.message ?? 'Qualcosa non ha funzionato. Riprova.') } finally { lock.current = false; setBusy(false) }
+    try { await fn() } catch (e: any) { toast(e?.message ?? 'Qualcosa non ha funzionato. Riprova.', 'neg') } finally { lock.current = false; setBusy(false) }
   }, [toast])
   return [busy, run] as const
 }

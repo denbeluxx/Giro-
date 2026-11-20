@@ -1,5 +1,7 @@
 /** Testi delle notifiche: li sceglie chi ha creato il gruppo. Le parole tra graffe vengono sostituite al momento dell'invio.
- *  ATTENZIONE: gli stessi testi predefiniti sono copiati nel servizio notifiche (supabase/functions/notify/index.ts). */
+ *  Il servizio notifiche (supabase/functions/notify) usa questo stesso file: dopo una modifica, `npm run build:notify`. */
+import type { Group, Member } from './types'
+
 export type NotifyKind = 'new_trip' | 'shotgun' | 'confirm' | 'low'
 export interface NotifyText { title: string; body: string }
 export type NotifyTexts = Partial<Record<NotifyKind, NotifyText>>
@@ -30,11 +32,11 @@ export const NOTIFY_INFO: Record<NotifyKind, { label: string; when: string; vars
 
 /** Sostituisce {dove}, {chi}… con i valori; le parole sconosciute restano come sono. */
 export function fillText(tpl: string, vars: Record<string, string>): string {
-  return tpl.replace(/\{(\w+)\}/g, (m, k: string) => (k in vars ? vars[k] : m))
+  return tpl.replace(/\{(\w+)\}/g, (m, k: string) => (Object.prototype.hasOwnProperty.call(vars, k) ? vars[k] : m))
 }
 
 export const textFor = (texts: NotifyTexts | undefined, kind: NotifyKind): NotifyText => {
-  const t = texts?.[kind]
+  const t = texts && typeof texts === 'object' ? texts[kind] : undefined
   return t && typeof t.title === 'string' && t.title.trim() && typeof t.body === 'string' ? t : NOTIFY_DEFAULTS[kind]
 }
 
@@ -44,8 +46,23 @@ export const preview = (kind: NotifyKind, t: NotifyText): NotifyText => {
   return { title: fillText(t.title, vars), body: fillText(t.body, vars) }
 }
 
+/** Graffe rimaste dopo le parole valide (es. «{{dove}}», «{ dove }»): arriverebbero così sul telefono. */
+export const strayBraces = (kind: NotifyKind, s: string): boolean => {
+  const ok = new Set(NOTIFY_INFO[kind].vars.map((v) => v.k))
+  return /[{}]/.test(s.replace(/\{(\w+)\}/g, (m, k: string) => (ok.has(k) ? '' : m)))
+}
+/** Il titolo deve avere almeno un carattere visibile. */
+export const visible = (s: string) => /[^\s\u200b-\u200d\ufeff]/.test(s)
 /** Parole tra graffe che il testo usa ma che per questa notifica non esistono. */
 export const unknownVars = (kind: NotifyKind, s: string): string[] => {
   const ok = new Set(NOTIFY_INFO[kind].vars.map((v) => v.k))
   return [...new Set([...s.matchAll(/\{(\w+)\}/g)].map((m) => m[1]).filter((k) => !ok.has(k)))]
+}
+
+/** Account che sceglie i testi: il creatore; se ha lasciato il gruppo, chi ha un account ed è nel gruppo da più tempo.
+ *  Stessa regola del database (texts_editor in supabase/schema.sql). */
+export function textsEditor(group: Pick<Group, 'owner'>, members: Member[]): string | null {
+  const active = members.filter((m) => !m.leftAt && m.userId)
+  if (group.owner && active.some((m) => m.userId === group.owner)) return group.owner
+  return [...active].sort((a, b) => (a.joinedAt < b.joinedAt ? -1 : a.joinedAt > b.joinedAt ? 1 : a.id < b.id ? -1 : 1))[0]?.userId ?? null
 }

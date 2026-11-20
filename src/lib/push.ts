@@ -40,6 +40,7 @@ export async function enablePush(): Promise<PushState> {
   if (!sub) sub = await reg.pushManager.subscribe({ userVisibleOnly: true, applicationServerKey: b64ToBytes(key) })
   await store.savePush({ endpoint: sub.endpoint, p256dh: bytesToB64(sub.getKey('p256dh')), auth: bytesToB64(sub.getKey('auth')) })
   store.notify({ type: 'test' }).catch(() => {}) // conferma immediata sul telefono
+  share('on')
   return 'on'
 }
 
@@ -47,15 +48,35 @@ export async function disablePush(): Promise<PushState> {
   const reg = await navigator.serviceWorker.getRegistration()
   const sub = await reg?.pushManager.getSubscription()
   if (sub) { await store.deletePush(sub.endpoint).catch(() => {}); await sub.unsubscribe().catch(() => {}) }
+  share('off')
   return 'off'
 }
 
-/** Stato delle notifiche di questo dispositivo, aggiornabile dopo un tocco. */
+/** Stato delle notifiche di questo dispositivo, condiviso tra le schermate (home, Gruppo, guida). */
+let shared: PushState | null = null
+const listeners = new Set<(s: PushState) => void>()
+function share(s: PushState) { shared = s; listeners.forEach((f) => f(s)) }
 export function usePush() {
-  const [state, setState] = useState<PushState | null>(null)
-  useEffect(() => { let on = true; pushState().then((s) => { if (on) setState(s) }); return () => { on = false } }, [])
-  return [state, setState] as const
+  const [state, setState] = useState<PushState | null>(shared)
+  useEffect(() => {
+    listeners.add(setState)
+    if (shared == null) pushState().then(share)
+    return () => { listeners.delete(setState) }
+  }, [])
+  return [state, share] as const
 }
+
+/** All'apertura: se il telefono è già iscritto, l'iscrizione passa all'account attuale (es. dopo un cambio di account). */
+export async function syncPush(): Promise<void> {
+  if ((await pushState()) !== 'on') return
+  const reg = await navigator.serviceWorker.getRegistration()
+  const sub = await reg?.pushManager.getSubscription()
+  if (!sub) return
+  const key = await store.pushKey()
+  if (bytesToB64(sub.options.applicationServerKey as ArrayBuffer) !== key) { await sub.unsubscribe().catch(() => {}); share('off'); return }
+  await store.savePush({ endpoint: sub.endpoint, p256dh: bytesToB64(sub.getKey('p256dh')), auth: bytesToB64(sub.getKey('auth')) })
+}
+
 export const PUSH_TEXT: Record<PushState, string> = {
   on: 'Nuove uscite, Shotgun, viaggi da confermare e saldo sotto i −70 km.',
   off: 'Nuove uscite, Shotgun, viaggi da confermare e saldo sotto i −70 km.',
