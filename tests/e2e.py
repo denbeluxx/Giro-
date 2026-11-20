@@ -24,7 +24,7 @@ def hero(pg):
 
 def shot(pg, name): pg.screenshot(path=f'{OUT}/{name}.png')
 def tap(pg, sel, wait=450): pg.click(sel); pg.wait_for_timeout(wait)
-def db(pg): return json.loads(pg.evaluate("localStorage.getItem('giro-demo-v5')"))['groups']['demo-group']
+def db(pg): return json.loads(pg.evaluate("localStorage.getItem('shotgun-demo-v5')"))['groups']['demo-group']
 
 def new_ctx(b, **kw):
     return b.new_context(viewport={'width': 390, 'height': 844}, device_scale_factor=2, is_mobile=True, has_touch=True, locale='it-IT', timezone_id='Europe/Rome', **kw)
@@ -129,7 +129,7 @@ with sync_playwright() as p:
     tap(pg, '.sheet-h .nav-btn', 400)
     ok(pg.locator('button:has-text("Guida al ritorno")').count() == 0 and pg.locator('[role=switch][aria-label="Non posso bere ostia"]').count() == 1, 'un solo conducente per andata e ritorno; opzione «Non posso bere ostia» unica')
     tap(pg, '[role=switch][aria-label="Non posso bere ostia"]', 300)
-    d = pg.evaluate("JSON.parse(localStorage.getItem(Object.keys(localStorage).find(k => k.startsWith('giro-draft-'))) || '{}')")
+    d = pg.evaluate("JSON.parse(localStorage.getItem(Object.keys(localStorage).find(k => k.startsWith('shotgun-draft-'))) || '{}')")
     ok(len(d.get('legs', [])) == 2 and all(l['designated'] for l in d['legs']) and len({l['driverId'] for l in d['legs']}) == 1, 'opzione e conducente valgono per andata e ritorno')
     tap(pg, '[role=switch][aria-label="Non posso bere ostia"]', 300)
     tap(pg, 'button:has-text("Pedaggio e pagante")', 400)

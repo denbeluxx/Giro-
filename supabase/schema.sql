@@ -1,4 +1,4 @@
--- Giro — schema del database (Supabase / Postgres).
+-- Shotgun — schema del database (Supabase / Postgres).
 -- Incolla tutto nell'SQL Editor di Supabase ed esegui una volta.
 -- I saldi NON sono salvati: l'app li ricalcola sempre dai viaggi confermati e dai rimborsi.
 
@@ -217,7 +217,7 @@ create or replace function public.members_guard() returns trigger language plpgs
 begin
   -- l'eliminazione di un account azzera user_id (on delete set null): è ammessa
   if ((new.user_id is distinct from old.user_id and new.user_id is not null) or new.group_id <> old.group_id or new.left_at is distinct from old.left_at)
-     and coalesce(current_setting('giro.rpc', true), '') <> '1' then
+     and coalesce(current_setting('shotgun.rpc', true), '') <> '1' then
     raise exception 'campo non modificabile direttamente';
   end if;
   return new;
@@ -257,7 +257,7 @@ begin
   if auth.uid() is null then raise exception 'accesso richiesto'; end if;
   select id into g from public.groups where invite_code = p_code;
   if g is null then raise exception 'Invito non valido o scaduto'; end if;
-  perform set_config('giro.rpc', '1', true);
+  perform set_config('shotgun.rpc', '1', true);
   update public.members set left_at = null where group_id = g and user_id = auth.uid();
   get diagnostics n = row_count;
   if n > 0 then return g; end if;
@@ -278,7 +278,7 @@ end $$;
 create or replace function public.leave_group(p_group uuid) returns void
 language plpgsql security definer set search_path = public as $$
 begin
-  perform set_config('giro.rpc', '1', true);
+  perform set_config('shotgun.rpc', '1', true);
   update public.members set left_at = now(), home = null, home_shared = false where group_id = p_group and user_id = auth.uid();
   delete from public.private_homes where group_id = p_group and user_id = auth.uid();
 end $$;
@@ -290,7 +290,7 @@ declare g uuid;
 begin
   select group_id into g from public.members where id = p_member and user_id is null;
   if g is null or not public.is_member(g) then raise exception 'Si possono togliere solo i membri senza account'; end if;
-  perform set_config('giro.rpc', '1', true);
+  perform set_config('shotgun.rpc', '1', true);
   update public.members set left_at = now() where id = p_member;
 end $$;
 

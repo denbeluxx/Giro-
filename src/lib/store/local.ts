@@ -4,7 +4,7 @@ import { uid, type Group, type GroupData, type ID, type Leg, type Member, type P
 import { sanitizeTrips } from '../validate'
 import { ConflictError, type Store } from './types'
 
-const KEY = 'giro-demo-v5'
+const KEY = 'shotgun-demo-v5'
 interface G { group: Group; members: Member[]; places: Place[]; trips: Trip[]; settlements: GroupData['settlements'] }
 interface DB { groups: Record<ID, G> }
 
@@ -32,7 +32,7 @@ function read(): DB {
   return db
 }
 let chan: BroadcastChannel | null = null
-try { chan = new BroadcastChannel('giro-demo') } catch { /* non disponibile */ }
+try { chan = new BroadcastChannel('shotgun-demo') } catch { /* non disponibile */ }
 const listeners = new Set<() => void>()
 function write(db: DB, notify = true) {
   const s = JSON.stringify(db)
@@ -44,7 +44,7 @@ if (chan) chan.onmessage = () => listeners.forEach((l) => l())
 if (typeof window !== 'undefined') window.addEventListener('storage', (e) => { if (e.key === KEY) listeners.forEach((l) => l()) })
 
 /** In demo si può «entrare» come un altro membro, per provare due sessioni affiancate. */
-const ME_KEY = 'giro-demo-me'
+const ME_KEY = 'shotgun-demo-me'
 export function demoIdentity(groupId: ID): ID | null { try { return sessionStorage.getItem(`${ME_KEY}-${groupId}`) } catch { return null } }
 export function setDemoIdentity(groupId: ID, memberId: ID) { try { sessionStorage.setItem(`${ME_KEY}-${groupId}`, memberId) } catch { /* */ } listeners.forEach((l) => l()) }
 export function resetDemo() { try { localStorage.removeItem(KEY) } catch { /* */ } mem.db = undefined; write(seed()) }

@@ -5,7 +5,7 @@ import { viteSingleFile } from 'vite-plugin-singlefile'
 
 // build normale: PWA installabile. build "sim": un solo file HTML con dati e percorsi simulati (anteprima).
 export default defineConfig(({ mode }) => ({
-  // GitHub Pages serve l'app in una sottocartella: BASE_PATH la indica (es. /giro/)
+  // GitHub Pages serve l'app in una sottocartella: BASE_PATH la indica (es. /shotgun/)
   base: process.env.BASE_PATH || '/',
   plugins: [
     react(),

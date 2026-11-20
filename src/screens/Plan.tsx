@@ -20,7 +20,7 @@ const ROW = 60
 
 // ---- Bozza: l'uscita in preparazione sopravvive a ricarica o chiusura dell'app ----
 interface Draft { v: 1; ts: number; mode: 'plan' | 'record'; redoId?: ID; tripId: ID; step: Step; present: ID[]; unavailable: ID[]; dest: Named | null; when: string; driver: ID | null; undecided: boolean; hasReturn: boolean; legs: Leg[]; start: Named | null; sig?: string }
-const draftKey = (g: ID) => `giro-draft-${g}`
+const draftKey = (g: ID) => `shotgun-draft-${g}`
 export function loadDraft(groupId: ID): Draft | null {
   try {
     const d = JSON.parse(localStorage.getItem(draftKey(groupId)) ?? 'null') as Draft | null

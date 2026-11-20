@@ -75,18 +75,18 @@ export function App() {
       setGroups(gs)
       let pick: ID | null = null
       if (deepTrip) { pick = await store.findTripGroup(deepTrip); if (!pick) { setDeepTrip(null); setMissing(true); clearParams() } }
-      if (!pick) { let last: string | null = null; try { last = localStorage.getItem('giro-group') } catch { /* */ } pick = gs.find((g) => g.id === last)?.id ?? gs[0]?.id ?? null }
+      if (!pick) { let last: string | null = null; try { last = localStorage.getItem('shotgun-group') } catch { /* */ } pick = gs.find((g) => g.id === last)?.id ?? gs[0]?.id ?? null }
       setGroupId(pick)
     } catch (e: any) { setErr(e?.message ?? 'Connessione non riuscita') }
   }, [deepTrip])
   useEffect(() => { if (session && !invite) loadGroups() }, [session?.userId, invite]) // eslint-disable-line react-hooks/exhaustive-deps
 
-  const switchGroup = useCallback((id: ID | null) => { transition('fade', () => setGroupId(id)); if (id) try { localStorage.setItem('giro-group', id) } catch { /* */ } }, [])
+  const switchGroup = useCallback((id: ID | null) => { transition('fade', () => setGroupId(id)); if (id) try { localStorage.setItem('shotgun-group', id) } catch { /* */ } }, [])
 
   let body: ReactNode
   if (session === undefined) body = <Splash />
   else if (!session) body = <Auth invite={!!invite} expired={expired} />
-  else if (invite) body = <Invite code={invite} done={(id) => { clearParams(); setInvite(null); if (id) try { localStorage.setItem('giro-group', id) } catch { /* */ } }} />
+  else if (invite) body = <Invite code={invite} done={(id) => { clearParams(); setInvite(null); if (id) try { localStorage.setItem('shotgun-group', id) } catch { /* */ } }} />
   else if (err) body = <div className="screen"><div className="scroll" style={{ paddingTop: 120 }}><Empty icon="alert" title="Connessione non riuscita" text="Non riesco a caricare i tuoi gruppi. Controlla la rete e riprova."><Btn onClick={loadGroups}>Riprova</Btn></Empty></div></div>
   else if (!groups) body = <Splash />
   else if (!groupId) body = <Groups groups={groups} onOpen={switchGroup} onCreated={async (id) => { await loadGroups(); switchGroup(id) }} />

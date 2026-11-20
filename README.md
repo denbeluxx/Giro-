@@ -1,4 +1,4 @@
-# Giro
+# Shotgun
 
 Chilometri, turni di guida e pedaggi tra amici. L'app mostra quanto ha contribuito ciascuno, suggerisce chi guida e lascia sempre la scelta al gruppo.
 
