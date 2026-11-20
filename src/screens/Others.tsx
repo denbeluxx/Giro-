@@ -181,7 +181,7 @@ export function Members() {
           <p className="caption" style={{ marginBottom: 12 }}>Chi apre il link entra nel gruppo con saldo zero. Il gruppo è privato: lo vede solo chi ne fa parte, quindi condividi il link solo con gli amici.</p>
           <div className="field on-card num" style={{ display: 'flex', alignItems: 'center', fontSize: 13, overflow: 'hidden', whiteSpace: 'nowrap', textOverflow: 'ellipsis', userSelect: 'all', minHeight: 40 }}>{link}</div>
           <div style={{ display: 'flex', gap: 8, marginTop: 10 }}>
-            <a className="btn primary small" style={{ flex: 1, textDecoration: 'none' }} href={whatsappUrl(`Entra nel gruppo «${data.group.name}» su Giro: ${link}`)} target="_blank" rel="noreferrer"><span className="btn-l"><Icon n="wa" size={20} />WhatsApp</span></a>
+            <a className="btn primary small" style={{ flex: 1, textDecoration: 'none' }} href={whatsappUrl(`Entra nel gruppo «${data.group.name}» su Shotgun:${link}`)} target="_blank" rel="noreferrer"><span className="btn-l"><Icon n="wa" size={20} />WhatsApp</span></a>
             <Btn small kind="gray" icon="link" onClick={copy} style={{ flex: 1 }}>Copia link</Btn>
           </div>
           <button className="link-under" onClick={() => setSheet('invite')}>Crea un nuovo link</button>

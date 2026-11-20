@@ -15,7 +15,7 @@ export default defineConfig(({ mode }) => ({
           registerType: 'autoUpdate',
           includeAssets: ['icon.svg'],
           manifest: {
-            name: 'Giro', short_name: 'Giro', lang: 'it',
+            name: 'Shotgun', short_name: 'Shotgun', lang: 'it',
             description: 'Chilometri, turni di guida e pedaggi tra amici',
             theme_color: '#16171A', background_color: '#16171A',
             display: 'standalone', start_url: '.', scope: '.',
