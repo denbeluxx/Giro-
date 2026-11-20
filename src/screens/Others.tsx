@@ -34,7 +34,7 @@ export function History() {
   return (
     <div className="screen"><Header title="Storico" />
       <div className="scroll">
-        {!trips.length ? <Empty icon="history" title="Nessuna uscita" text="Le uscite organizzate e i viaggi confermati compaiono qui, con percorso e calcoli."><Btn onClick={() => push({ s: 'plan', mode: 'plan' })}>Organizza uscita</Btn></Empty> : (
+        <div data-guide="storico">{!trips.length ? <Empty icon="history" title="Nessuna uscita" text="Le uscite organizzate e i viaggi confermati compaiono qui, con percorso e calcoli."><Btn onClick={() => push({ s: 'plan', mode: 'plan' })}>Organizza uscita</Btn></Empty> : (
           <div className="list">{trips.map((t) => {
             const e = tripEffect(t)
             const drivers = [...new Set(t.legs.map((l) => l.driverId).filter(Boolean))].map((id) => byId(id)?.name).join(' e ')
@@ -46,7 +46,7 @@ export function History() {
               </button>
             )
           })}</div>
-        )}
+        )}</div>
       </div>
     </div>
   )
@@ -115,7 +115,7 @@ export function Money() {
   return (
     <div className="screen"><Header title="Pedaggi" />
       <div className="scroll">
-        <div className="list">{people.map((m) => (
+        <div className="list" data-guide="pedaggi">{people.map((m) => (
           <div className="row" key={m.id}><Avatar m={m} /><div className="grow"><div className="t">{m.name}{m.id === me.id && <span className="dim"> · tu</span>}</div>{m.leftAt && <div className="s">Ha lasciato il gruppo</div>}</div>
             <div className={`v strong num ${(bal.eur[m.id] ?? 0) > 0 ? 'pos' : (bal.eur[m.id] ?? 0) < 0 ? 'neg' : ''}`}>{fmtEurSigned(bal.eur[m.id] ?? 0)}</div></div>
         ))}</div>
@@ -163,7 +163,7 @@ export function Money() {
 }
 
 export function Members() {
-  const { data, me, active, bal, reload, groups, switchGroup, signOut } = useApp()
+  const { data, me, active, bal, reload, groups, switchGroup, signOut, openGuide } = useApp()
   const toast = useToast()
   const [sheet, setSheet] = useState<null | 'add' | 'home' | 'homeOff' | 'leave' | 'name' | 'invite' | 'member' | 'memberOff' | 'group' | 'texts'>(null)
   const [editing, setEditing] = useState<ID | null>(null)
@@ -184,7 +184,7 @@ export function Members() {
     <div className="screen"><Header title="Gruppo" />
       <div className="scroll">
         <div className="list" style={{ marginBottom: 14 }}><button className="row" onClick={() => { setName(data.group.name); setSheet('group') }}><span className="grow t">Nome del gruppo</span><span className="v">{data.group.name}</span><span className="chev"><Icon n="chev" size={18} /></span></button></div>
-        <div className="card" style={{ padding: 16 }}>
+        <div className="card" style={{ padding: 16 }} data-guide="invita">
           <div style={{ fontWeight: 600, marginBottom: 4 }}>Invita gli amici</div>
           <p className="caption" style={{ marginBottom: 12 }}>Chi apre il link entra nel gruppo con saldo zero. Il gruppo è privato: lo vede solo chi ne fa parte, quindi condividi il link solo con gli amici.</p>
           <div className="field on-card num" style={{ display: 'flex', alignItems: 'center', fontSize: 13, overflow: 'hidden', whiteSpace: 'nowrap', textOverflow: 'ellipsis', userSelect: 'all', minHeight: 40 }}>{link}</div>
@@ -227,6 +227,7 @@ export function Members() {
           <div style={{ height: 12 }} /><Btn kind="gray" onClick={() => { resetDemo(); reload(); toast('Dati dimostrativi ripristinati') }}>Ripristina i dati dimostrativi</Btn></div>}
 
         <div className="section"><div className="list">
+          <button className="row" onClick={openGuide}><span className="row-ic"><Icon n="info" /></span><span className="grow t">Guida dell'app</span><span className="chev"><Icon n="chev" size={18} /></span></button>
           {groups.length > 1 && <button className="row" onClick={() => switchGroup(null)}><span className="grow t">Cambia gruppo</span><span className="chev"><Icon n="chev" size={18} /></span></button>}
           <button className="row" onClick={() => switchGroup(null)}><span className="grow t">Crea un altro gruppo</span><span className="chev"><Icon n="chev" size={18} /></span></button>
           <button className="row" onClick={() => setSheet('leave')}><span className="grow t" style={{ color: 'var(--danger)' }}>Lascia il gruppo</span></button>

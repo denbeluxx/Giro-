@@ -539,3 +539,36 @@ button.hchip:active { transform: scale(0.97); }
 .nt-preview b { overflow-wrap: anywhere; }
 .nt-preview .grow > span:not(.nt-app):not(.nt-action) { overflow-wrap: anywhere; color: var(--text); }
 .nt-action { align-self: flex-start; margin-top: 6px; padding: 4px 12px; border-radius: 10px; font-size: 13px; font-weight: 600; background: rgba(255, 255, 255, 0.1); }
+
+/* ---- Guida al primo accesso ---- */
+.guide { position: fixed; inset: 0; z-index: 300; pointer-events: none; }
+.guide-dim, .guide-block, .guide-card { pointer-events: auto; }
+.guide-dim { position: absolute; inset: 0; background: rgba(6, 7, 9, 0.74); transition: clip-path 0.35s var(--ease); }
+.guide-ring { position: absolute; border-radius: 20px; pointer-events: none; box-shadow: 0 0 0 2px var(--app-hex), 0 0 22px rgb(var(--app) / 0.55), inset 0 0 18px rgb(var(--app) / 0.18);
+  transition: left 0.35s var(--ease), top 0.35s var(--ease), width 0.35s var(--ease), height 0.35s var(--ease); }
+.guide-block { position: absolute; }
+.guide-tap { position: absolute; color: var(--app-hex); filter: drop-shadow(0 0 8px rgb(var(--app) / 0.9)); animation: guide-tap 1.3s ease-in-out infinite; pointer-events: none; }
+@keyframes guide-tap { 0%, 100% { transform: translateY(10px); opacity: 0.5; } 50% { transform: translateY(0); opacity: 1; } }
+.guide-card { position: absolute; left: 14px; right: 14px; max-width: 440px; margin: 0 auto; padding: 16px 18px 16px; border-radius: 24px; touch-action: pan-y;
+  background: linear-gradient(155deg, #2a2c31, #1c1d21) padding-box, linear-gradient(135deg, #d9f9ff, var(--app-hex) 40%, #0f7f96 75%, #9eeeff) border-box; border: 1.5px solid transparent;
+  box-shadow: 0 0 26px rgb(var(--app) / 0.25), 0 18px 50px rgba(0, 0, 0, 0.6); animation: guide-in 0.32s var(--ease) both; }
+@keyframes guide-in { from { opacity: 0; transform: translateY(8px) scale(0.98); } }
+.guide-card[style*='translateY(-50%)'] { animation-name: guide-in-c; }
+@keyframes guide-in-c { from { opacity: 0; transform: translateY(-48%) scale(0.98); } to { transform: translateY(-50%); } }
+.guide-card.welcome { text-align: center; }
+.guide-card.welcome .guide-btns { justify-content: center; }
+.guide-top { display: flex; align-items: center; justify-content: space-between; min-height: 32px; margin-bottom: 6px; }
+.guide-dots { display: flex; gap: 5px; }
+.guide-dots i { width: 6px; height: 6px; border-radius: 3px; background: rgba(255, 255, 255, 0.18); transition: width 0.25s var(--ease), background 0.25s; }
+.guide-dots i.past { background: rgb(var(--app) / 0.45); }
+.guide-dots i.on { width: 18px; background: var(--app-hex); box-shadow: 0 0 8px rgb(var(--app) / 0.8); }
+.guide-skip { font-size: 15px; min-height: 36px; padding: 0 2px; }
+.guide-icon { display: block; margin: 4px auto 10px; border-radius: 16px; box-shadow: 0 0 0 1px rgba(255, 255, 255, 0.18), 0 0 26px rgb(var(--app) / 0.3); }
+.guide-card h2 { font-size: 22px; font-weight: 700; letter-spacing: -0.02em; margin: 0 0 6px; }
+.guide-card p { margin: 0; font-size: 15px; line-height: 1.42; color: var(--text2); }
+.guide-btns { display: flex; gap: 8px; justify-content: flex-end; margin-top: 14px; }
+.guide-btns .btn { width: auto; }
+.guide-notify { width: auto; margin-top: 12px; }
+.guide-ok { display: flex; align-items: center; gap: 6px; margin-top: 10px !important; color: var(--pos) !important; }
+.guide-note { margin-top: 10px !important; font-size: 13px !important; }
+.guide.still .guide-dim, .guide.still .guide-ring, .guide.still .guide-card, .guide.still .guide-tap { transition: none; animation: none; }

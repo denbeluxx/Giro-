@@ -87,7 +87,7 @@ export function Tabs({ tabs, index, onIndex, color }: { tabs: TabDef[]; index: n
 
   return (
     <div className="screen tabs-root" style={color ? ({ '--tab-led': color } as React.CSSProperties) : undefined}>
-      <div className="tabbar" ref={bar} role="tablist" aria-label="Sezioni">
+      <div className="tabbar" ref={bar} role="tablist" aria-label="Sezioni" data-guide="sezioni">
         {tabs.map((t, i) => (
           <button key={t.key} role="tab" id={`tab-${t.key}`} aria-controls={`page-${t.key}`} aria-selected={i === index} className={i === index ? 'on' : ''} onClick={() => go(i)}>{t.label}</button>
         ))}

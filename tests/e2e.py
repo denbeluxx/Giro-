@@ -61,6 +61,11 @@ def plan_to(pg, place, driver=None, search=None, mode='Organizza uscita', only=N
 
 with sync_playwright() as p:
     b = p.chromium.launch(executable_path='/usr/bin/google-chrome', args=['--no-sandbox'])
+    # la guida del primo accesso ha il suo collaudo: negli altri contesti è già vista
+    _nc = b.new_context
+    def _seen(**kw):
+        c = _nc(**kw); c.add_init_script("try { localStorage.setItem('shotgun-guide-done', '1') } catch (e) {}"); return c
+    b.new_context = _seen
     c = new_ctx(b, record_video_dir=f'{OUT}/video', record_video_size={'width': 390, 'height': 844})
     pg = c.new_page()
     errs = []
@@ -303,6 +308,42 @@ with sync_playwright() as p:
     shot(pg, '32-sezioni-320')
     swipe(pg, 180); ok(active_tab(pg) == 'Luoghi', 'a 320 px si scorre anche col dito')
     c6.close()
+
+    # --- Guida al primo accesso ---
+    c8 = _nc(viewport={'width': 390, 'height': 844}, device_scale_factor=2, is_mobile=True, has_touch=True, locale='it-IT'); pg = c8.new_page(); pg.goto(SIM)
+    pg.wait_for_selector('.guide-card', timeout=5000)
+    ok('Benvenuto su Shotgun' in pg.inner_text('.guide-card'), 'al primo accesso parte la guida')
+    shot(pg, '35-guida-benvenuto')
+    tap(pg, '.guide-card .btn:has-text("Iniziamo")', 1300)
+    ring = pg.locator('.guide-ring').bounding_box(); hb = pg.locator('[data-guide="saldo"]').bounding_box()
+    ok('Il tuo saldo' in pg.inner_text('.guide-card') and abs(ring['y'] - (hb['y'] - 6)) < 4 and abs(ring['width'] - (hb['width'] + 12)) < 4, 'la guida illumina il saldo vero sulla schermata')
+    shot(pg, '36-guida-saldo')
+    for _ in range(3): tap(pg, '.guide-card .btn:has-text("Avanti")', 1300)
+    ok('Viaggio già fatto' in pg.inner_text('.guide-card') and pg.locator('[data-guide="registra"]').bounding_box()['y'] < 844, 'spiega come registrare un viaggio, mostrando il pulsante vero')
+    shot(pg, '37-guida-registra')
+    swipe(pg, -160, y=pg.locator('.guide-card').bounding_box()['y'] + 60)
+    ok('Cinque sezioni' in pg.inner_text('.guide-card'), 'si va avanti anche scorrendo il riquadro della guida')
+    shot(pg, '38-guida-sezioni')
+    tap(pg, '.tabbar [role=tab]:has-text("Storico")', 1600)
+    ok(active_tab(pg) == 'Storico' and 'Tutte le uscite' in pg.inner_text('.guide-card'), 'passo interattivo: toccando «Storico» si apre la sezione e la guida prosegue')
+    tap(pg, '.guide-card .btn:has-text("Avanti")', 1300); ok(active_tab(pg) == 'Pedaggi', 'la guida porta a Pedaggi')
+    tap(pg, '.guide-card .btn:has-text("Avanti")', 1300); ok(active_tab(pg) == 'Gruppo', 'poi a Gruppo')
+    tap(pg, '.guide-card .btn:has-text("Avanti")', 1300); ok(active_tab(pg) == 'Saldi' and 'Come si contano i km' in pg.inner_text('.guide-card'), 'e torna a Saldi per le regole')
+    tap(pg, '.guide-card .btn:has-text("Indietro")', 1300); ok(active_tab(pg) == 'Gruppo', 'si può tornare al passo precedente')
+    tap(pg, '.guide-card .btn:has-text("Avanti")', 1300); tap(pg, '.guide-card .btn:has-text("Avanti")', 900)
+    ok('Shotgun!' in pg.inner_text('.guide-card h2'), 'ultimo passo: Shotgun e notifiche'); shot(pg, '39-guida-fine')
+    tap(pg, '.guide-card .btn:has-text("Inizia a usare Shotgun")', 700)
+    ok(pg.locator('.guide').count() == 0 and active_tab(pg) == 'Saldi', 'finita la guida si è su Saldi')
+    pg.reload(); hero(pg); pg.wait_for_timeout(1300)
+    ok(pg.locator('.guide').count() == 0, 'la guida non riparte alle aperture successive')
+    tab(pg, 'Gruppo'); pg.locator(f'{CUR} .row:has-text("Guida dell\'app")').scroll_into_view_if_needed(); tap(pg, f'{CUR} .row:has-text("Guida dell\'app")', 1300)
+    ok(pg.locator('.guide-card:has-text("Benvenuto")').count() == 1 and active_tab(pg) == 'Saldi', 'si può rivedere da Gruppo')
+    pg.keyboard.press('Escape'); pg.wait_for_timeout(500); ok(pg.locator('.guide').count() == 0, 'Esc chiude la guida')
+    c8.close()
+    c9 = _nc(viewport={'width': 375, 'height': 667}, device_scale_factor=2, is_mobile=True, has_touch=True, locale='it-IT'); pg = c9.new_page(); pg.goto(SIM)
+    pg.wait_for_selector('.guide-card', timeout=5000); tap(pg, '.guide-card .guide-skip', 600)
+    ok(pg.locator('.guide').count() == 0 and pg.evaluate("localStorage.getItem('shotgun-guide-done')") == '1', 'la guida si può saltare subito')
+    c9.close()
 
     # --- Colori: azzurro per le azioni, verde e rosso per confermato e annullato ---
     c7 = new_ctx(b); pg = c7.new_page(); pg.goto(SIM); hero(pg)

@@ -9,6 +9,7 @@ import { Plan } from './screens/Plan'
 import { TripView } from './screens/TripView'
 import { Btn, Empty, Icon, Notice, Skel, ToastHost, openSheets, reducedMotion, useBusy, useToast } from './ui/kit'
 import { Tabs } from './ui/Tabs'
+import { Guide, guideDone } from './ui/Guide'
 
 export type Route =
   | { s: 'home' } | { s: 'members' } | { s: 'places' } | { s: 'history' } | { s: 'money' }
@@ -20,6 +21,8 @@ interface Ctx {
   reload: () => Promise<void>; push: (r: Route) => void; pop: () => void; replace: (r: Route) => void; home: () => void
   /** Aggiunge un livello alla cronologia (es. un passo del flusso), così il tasto Indietro del telefono lo annulla. */
   forward: () => void
+  /** Sezione aperta (0 = Saldi) e guida dell'app. */
+  tab: number; openGuide: () => void
   /** Registra chi gestisce il tasto Indietro prima del cambio di schermata; restituisce la funzione per toglierlo. */
   onBack: (fn: () => boolean) => () => void
   /** Esce dalla schermata corrente togliendo anche n livelli della cronologia (es. i passi di un flusso). */
@@ -162,6 +165,8 @@ function GroupProvider({ groupId, groups, switchGroup, deepTrip, missing, clearD
   const forward = useCallback(() => { level.current += 1; try { history.pushState({ d: level.current }, '') } catch { /* */ } }, [])
   // sezione aperta (Saldi, Storico…): lasciando Saldi si aggiunge un livello, così il tasto Indietro del telefono ci riporta
   const [tab, setTab] = useState(0)
+  // guida: parte da sola al primo accesso su questo telefono, si riapre da Gruppo
+  const [guide, setGuide] = useState(false)
   const tabEntry = useRef(false)
   const tabState = useRef({ tab: 0, depth: 1 })
   tabState.current = { tab, depth: stack.length }
@@ -235,10 +240,16 @@ function GroupProvider({ groupId, groups, switchGroup, deepTrip, missing, clearD
     const map = new Map(data.members.map((m) => [m.id, m]))
     return {
       data, bal: balances(data.members, data.trips, data.settlements), me: map.get(data.meId)!, byId: (id) => (id ? map.get(id) : undefined),
-      active: data.members.filter((m) => !m.leftAt), reload, push, pop, replace, home, forward, onBack, leave, collapse, saveTrip, groups, switchGroup,
+      active: data.members.filter((m) => !m.leftAt), reload, push, pop, replace, home, forward, onBack, leave, collapse, saveTrip, groups, switchGroup, tab, openGuide: () => setGuide(true),
       signOut: () => { signingOut.current = true; store.signOut() },
     }
-  }, [data, reload, push, pop, replace, home, forward, onBack, leave, collapse, saveTrip, groups, switchGroup])
+  }, [data, reload, push, pop, replace, home, forward, onBack, leave, collapse, saveTrip, groups, switchGroup, tab])
+  const ready = !!ctx && stack.length === 1 && !deepTrip
+  useEffect(() => {
+    if (!ready || guideDone()) return
+    const id = setTimeout(() => setGuide(true), 700)
+    return () => clearTimeout(id)
+  }, [ready])
 
   if (err && !data) return <div className="screen"><div className="scroll" style={{ paddingTop: 120 }}><Empty icon="alert" title="Gruppo non disponibile" text={err}><Btn onClick={reload}>Riprova</Btn><div style={{ height: 10 }} /><Btn kind="gray" onClick={() => switchGroup(null)}>I miei gruppi</Btn></Empty></div></div>
   if (!ctx) return <Splash />
@@ -249,6 +260,7 @@ function GroupProvider({ groupId, groups, switchGroup, deepTrip, missing, clearD
         key: k, label: TAB_LABEL[k],
         page: k === 'home' ? <Home /> : k === 'history' ? <History /> : k === 'money' ? <Money /> : k === 'places' ? <Places /> : <Members />,
       }))} />}
+      {guide && (TABS as readonly string[]).includes(r.s) && <Guide onClose={() => setGuide(false)} />}
       {r.s === 'plan' && <Plan key={`${r.edit?.id ?? r.redo?.id ?? 'new'}-${stack.length}`} mode={r.mode} edit={r.edit} redo={r.redo} at={r.at} resume={r.resume} />}
       {r.s === 'trip' && <TripView key={r.id} id={r.id} fresh={r.fresh} autoShotgun={r.shotgun} />}
     </C.Provider>

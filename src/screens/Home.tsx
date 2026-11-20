@@ -76,7 +76,7 @@ export function Home() {
       <div className="scroll has-cta">
         <button onClick={() => push({ s: 'members' })} style={{ display: 'block' }}><div className="kicker">Gruppo</div><h1 className="title">{data.group.name}</h1></button>
 
-        <div className={`card hero lit${my > 0 ? ' lit-pos' : my < 0 ? ' lit-neg' : ''}${pari ? ' pari' : ''}${party ? ' party' : ''}`} style={{ marginTop: 16 }}>
+        <div data-guide="saldo" className={`card hero lit${my > 0 ? ' lit-pos' : my < 0 ? ' lit-neg' : ''}${pari ? ' pari' : ''}${party ? ' party' : ''}`} style={{ marginTop: 16 }}>
           <div className="k">Il tuo saldo di guida{pari && <span className="pill rainbow" style={{ marginLeft: 8 }}>Pari perfetto</span>}</div>
           <div className="big"><span className="chrome-t num"><Count id={`km-${me.id}`} value={my} format={(v) => { const x = roundKm(v); return `${x > 0 ? '+' : x < 0 ? '−' : ''}${kmNum(x)}` }} /></span><small>km</small></div>
           <p className="caption">{meaning}</p>
@@ -104,7 +104,7 @@ export function Home() {
         {due.length > 2 && <button className="link-under" onClick={() => push({ s: 'history' })}>Altri {due.length - 2} viaggi da confermare nello storico</button>}
         {next && banner(next, false)}
 
-        <div className="section">
+        <div className="section" data-guide="classifica">
           <div className="section-h"><h2>Saldi di guida</h2></div>
           <div className="list">
             {ranked.map((m) => (
@@ -130,13 +130,13 @@ export function Home() {
 
 
         <div className="section">
-          <div className="list"><button className="row" onClick={() => push({ s: 'plan', mode: 'record' })}>
+          <div className="list" data-guide="registra"><button className="row" onClick={() => push({ s: 'plan', mode: 'record' })}>
             <span className="avatar ic-tile gray"><Icon n="plus" size={20} /></span>
             <span className="grow"><div className="t wrap-t">Registra un viaggio già fatto</div></span><span className="chev"><Icon n="chev" size={18} /></span>
           </button></div>
         </div>
       </div>
-      <div className="cta"><Btn icon="car" onClick={() => (draft ? setAsk(true) : push({ s: 'plan', mode: 'plan' }))}>Organizza uscita</Btn></div>
+      <div className="cta"><Btn data-guide="organizza" icon="car" onClick={() => (draft ? setAsk(true) : push({ s: 'plan', mode: 'plan' }))}>Organizza uscita</Btn></div>
       {ask && draft && <Sheet title="Hai un'uscita in preparazione" onClose={() => setAsk(false)} footer={<><Btn onClick={() => { setAsk(false); push({ s: 'plan', mode: draft.mode, resume: true }) }}>Riprendi {draft.dest?.name ?? 'la bozza'}</Btn><div style={{ height: 8 }} /><Btn kind="gray" onClick={() => { clearDraft(data.group.id); setAsk(false); push({ s: 'plan', mode: 'plan' }) }}>Nuova uscita (elimina la bozza)</Btn></>}>
         <p style={{ margin: '0 4px', lineHeight: 1.4 }}>Vuoi continuare quella o ricominciare da capo?</p></Sheet>}
     </div>
