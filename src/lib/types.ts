@@ -23,8 +23,9 @@ export interface Member {
 
 /** Tariffa confermata dal gruppo per una coppia di caselli (chiave "a|b" ordinata). */
 export interface GroupToll { cents: number; by: ID; on: string }
-export interface GroupSettings { tolls?: Record<string, GroupToll> }
-export interface Group { id: ID; name: string; inviteCode: string; settings: GroupSettings }
+export interface GroupSettings { tolls?: Record<string, GroupToll>; notifyTexts?: import('./notifyTexts').NotifyTexts }
+/** owner: account di chi ha creato il gruppo (sceglie i testi delle notifiche). */
+export interface Group { id: ID; name: string; inviteCode: string; settings: GroupSettings; owner?: string | null }
 
 export interface Stop extends Pt {
   id: ID

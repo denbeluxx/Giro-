@@ -131,13 +131,15 @@ export function Sheet({ title, onClose, children, footer, onBackPress }: { title
   )
 }
 
-const ToastCtx = createContext<(msg: string) => void>(() => {})
+/** Avviso breve. pos = verde (confermato), neg = rosso (annullato). */
+export type ToastKind = 'pos' | 'neg'
+const ToastCtx = createContext<(msg: string, kind?: ToastKind) => void>(() => {})
 export const useToast = () => useContext(ToastCtx)
 export function ToastHost({ children }: { children: ReactNode }) {
-  const [t, setT] = useState<{ msg: string; k: number } | null>(null)
-  const show = useCallback((msg: string) => setT({ msg, k: Date.now() }), [])
+  const [t, setT] = useState<{ msg: string; k: number; kind?: ToastKind } | null>(null)
+  const show = useCallback((msg: string, kind?: ToastKind) => setT({ msg, k: Date.now(), kind }), [])
   useEffect(() => { if (!t) return; const id = setTimeout(() => setT(null), 3200); return () => clearTimeout(id) }, [t])
-  return <ToastCtx.Provider value={show}>{children}{t && <div key={t.k} className="toast glass" role="status">{t.msg}</div>}</ToastCtx.Provider>
+  return <ToastCtx.Provider value={show}>{children}{t && <div key={t.k} className={`toast glass${t.kind ? ` ${t.kind}` : ''}`} role="status">{t.kind && <Icon n={t.kind === 'pos' ? 'check' : 'x'} size={18} />}{t.msg}</div>}</ToastCtx.Provider>
 }
 
 /** Cifra che scorre brevemente dal valore precedente a quello nuovo. */

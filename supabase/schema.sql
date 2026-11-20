@@ -11,6 +11,8 @@ create table if not exists public.groups (
   settings jsonb not null default '{}'::jsonb,
   created_at timestamptz not null default now()
 );
+-- chi ha creato il gruppo: è l'unico che sceglie i testi delle notifiche
+alter table public.groups add column if not exists owner uuid references auth.users(id) on delete set null;
 
 create table if not exists public.members (
   id uuid primary key default gen_random_uuid(),
@@ -233,7 +235,7 @@ language plpgsql security definer set search_path = public as $$
 declare g uuid;
 begin
   if auth.uid() is null then raise exception 'accesso richiesto'; end if;
-  insert into public.groups(name) values (p_name) returning id into g;
+  insert into public.groups(name, owner) values (p_name, auth.uid()) returning id into g;
   insert into public.members(group_id, user_id, name) values (g, auth.uid(), p_member_name);
   return g;
 end $$;
@@ -390,6 +392,36 @@ insert into public.app_secrets(name, value) values ('cron', md5(gen_random_uuid(
 create table if not exists public.notify_log (key text primary key, at timestamptz not null default now());
 alter table public.notify_log enable row level security;
 revoke all on public.notify_log from authenticated, anon;
+
+-- Gruppi creati prima di questa colonna: il creatore è il primo membro con un account
+update public.groups g set owner = (select m.user_id from public.members m where m.group_id = g.id and m.user_id is not null order by m.joined_at limit 1) where g.owner is null;
+
+-- Testi delle notifiche, scelti da chi ha creato il gruppo. null o {} = testi predefiniti.
+create or replace function public.set_notify_texts(p_group uuid, p_texts jsonb) returns void
+language plpgsql security definer set search_path = public as $$
+declare k text; v jsonb;
+begin
+  if not public.is_member(p_group) then raise exception 'accesso negato'; end if;
+  if (select owner from public.groups where id = p_group) is distinct from auth.uid() then
+    raise exception 'I testi delle notifiche li può cambiare solo chi ha creato il gruppo.';
+  end if;
+  if p_texts is null or p_texts = '{}'::jsonb then
+    update public.groups set settings = settings - 'notifyTexts' where id = p_group;
+    return;
+  end if;
+  if jsonb_typeof(p_texts) <> 'object' then raise exception 'Testi non validi.'; end if;
+  for k, v in select * from jsonb_each(p_texts) loop
+    if k not in ('new_trip', 'shotgun', 'confirm', 'low') or jsonb_typeof(v) <> 'object'
+      or jsonb_typeof(v->'title') is distinct from 'string' or jsonb_typeof(v->'body') is distinct from 'string'
+      or char_length(btrim(v->>'title')) not between 1 and 80 or char_length(v->>'body') > 200
+      or (select count(*) from jsonb_object_keys(v)) <> 2 then
+      raise exception 'Testi non validi: titolo da 1 a 80 caratteri, messaggio fino a 200.';
+    end if;
+  end loop;
+  update public.groups set settings = jsonb_set(settings, '{notifyTexts}', p_texts) where id = p_group;
+end $$;
+revoke all on function public.set_notify_texts(uuid, jsonb) from public, anon;
+grant execute on function public.set_notify_texts(uuid, jsonb) to authenticated;
 
 -- ---------------------------------------------------------------------------
 -- Aggiornamenti in tempo reale tra dispositivi

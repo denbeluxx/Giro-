@@ -12,6 +12,7 @@ import { uid, type ID, type Place, type Trip } from '../lib/types'
 import { Avatar, Btn, Empty, Icon, Seg, Sheet, Switch, useBusy, useToast, led } from '../ui/kit'
 import { PlaceSearch } from '../ui/PlaceSearch'
 import { useInTabs } from '../ui/Tabs'
+import { NotifyTextsSheet } from './NotifyTexts'
 
 export function Header({ title, right }: { title: string; right?: React.ReactNode }) {
   const { pop } = useApp()
@@ -21,7 +22,7 @@ export function Header({ title, right }: { title: string; right?: React.ReactNod
 }
 
 export function StatusPill({ t }: { t: Trip }) {
-  if (t.status === 'cancelled') return <span className="pill">Annullato</span>
+  if (t.status === 'cancelled') return <span className="pill neg">Annullato</span>
   if (t.status === 'confirmed') return <span className="pill pos">Confermato</span>
   return t.startsAt < new Date().toISOString() ? <span className="pill warn">Da confermare</span> : <span className="pill accent">In programma</span>
 }
@@ -164,7 +165,7 @@ export function Money() {
 export function Members() {
   const { data, me, active, bal, reload, groups, switchGroup, signOut } = useApp()
   const toast = useToast()
-  const [sheet, setSheet] = useState<null | 'add' | 'home' | 'homeOff' | 'leave' | 'name' | 'invite' | 'member' | 'memberOff' | 'group'>(null)
+  const [sheet, setSheet] = useState<null | 'add' | 'home' | 'homeOff' | 'leave' | 'name' | 'invite' | 'member' | 'memberOff' | 'group' | 'texts'>(null)
   const [editing, setEditing] = useState<ID | null>(null)
   const [name, setName] = useState('')
   const [busy, run] = useBusy()
@@ -214,7 +215,9 @@ export function Members() {
 
         {push$ && <div className="section"><div className="section-h"><h2>Notifiche</h2></div>
           <div className="list"><div className="row"><span className="row-ic"><Icon n="bell" /></span><div className="grow"><div className="t">Notifiche su questo telefono</div><div className="s wrap">{PUSH_TEXT[push$]}</div></div>
-            {(push$ === 'on' || push$ === 'off') && <Switch on={push$ === 'on'} label="Notifiche su questo telefono" onChange={(v) => run(async () => { const s = v ? await enablePush() : await disablePush(); setPush(s); toast(s === 'on' ? 'Notifiche attive su questo telefono' : s === 'denied' ? 'Notifiche bloccate: riattivale dalle impostazioni del telefono' : 'Notifiche disattivate') })} />}</div></div>
+            {(push$ === 'on' || push$ === 'off') && <Switch on={push$ === 'on'} label="Notifiche su questo telefono" onChange={(v) => run(async () => { const s = v ? await enablePush() : await disablePush(); setPush(s); toast(s === 'on' ? 'Notifiche attive su questo telefono' : s === 'denied' ? 'Notifiche bloccate: riattivale dalle impostazioni del telefono' : 'Notifiche disattivate') })} />}</div>
+            <button className="row" onClick={() => setSheet('texts')}><span className="row-ic"><Icon n="edit" /></span><span className="grow"><div className="t">Testi delle notifiche</div>
+              <div className="s">{data.group.owner && data.group.owner === me.userId ? (data.group.settings.notifyTexts ? 'Scritti da te' : 'Scrivili tu') : `Li sceglie ${data.members.find((m) => m.userId === data.group.owner)?.name ?? 'chi ha creato il gruppo'}`}</div></span><span className="chev"><Icon n="chev" size={18} /></span></button></div>
           {push$ === 'on' && <p className="foot">Ogni telefono si attiva a parte. Il promemoria dei viaggi da confermare arriva la mattina dopo l'uscita. <button className="link" onClick={() => { store.notify({ type: 'test' }).catch(() => {}); toast('Notifica di prova inviata') }}>Invia una prova</button></p>}
         </div>}
 
@@ -254,6 +257,7 @@ export function Members() {
       {sheet === 'group' && <Sheet title="Nome del gruppo" onClose={() => setSheet(null)} footer={<Btn busy={busy} disabled={!name.trim() || name.trim() === data.group.name} onClick={() => run(async () => { await store.renameGroup(data.group.id, name.trim()); await reload(); setSheet(null); toast('Gruppo rinominato') })}>Salva nome</Btn>}>
         <input className="field" aria-label="Nome del gruppo" value={name} onChange={(e) => setName(e.target.value)} maxLength={40} />
         <p className="foot">Lo vedono tutti i membri.</p></Sheet>}
+      {sheet === 'texts' && <NotifyTextsSheet onClose={() => setSheet(null)} />}
       {sheet === 'invite' && <Sheet title="Nuovo link di invito" onClose={() => setSheet(null)} footer={<><Btn busy={busy} onClick={() => run(async () => { await store.regenerateInvite(data.group.id); await reload(); setSheet(null); toast('Nuovo link pronto: il vecchio non funziona più') })}>Crea nuovo link</Btn><div style={{ height: 8 }} /><Btn kind="gray" onClick={() => setSheet(null)}>Annulla</Btn></>}>
         <p style={{ margin: '0 4px', lineHeight: 1.4 }}>Il link attuale smette di funzionare. Chi è già nel gruppo resta dentro. Utile se il link è finito nelle mani sbagliate.</p></Sheet>}
       {sheet === 'leave' && <Sheet title="Lasciare il gruppo?" onClose={() => setSheet(null)} footer={<><Btn busy={busy} className="btn-danger" onClick={() => run(async () => { await store.leaveGroup(data.group.id); window.location.reload() })}>Lascia il gruppo</Btn><div style={{ height: 8 }} /><Btn kind="gray" onClick={() => setSheet(null)}>Resta nel gruppo</Btn></>}>

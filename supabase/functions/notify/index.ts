@@ -11,6 +11,23 @@ const cors = { 'Access-Control-Allow-Origin': '*', 'Access-Control-Allow-Headers
 const json = (b: unknown, status = 200) => new Response(JSON.stringify(b), { status, headers: { ...cors, 'content-type': 'application/json' } })
 const LOW_KM = -70
 
+// Testi delle notifiche: quelli scritti dal creatore del gruppo (groups.settings.notifyTexts) o questi predefiniti.
+// Devono restare uguali a NOTIFY_DEFAULTS in src/lib/notifyTexts.ts (lo controlla un test).
+type Kind = 'new_trip' | 'shotgun' | 'confirm' | 'low'
+const DEFAULTS: Record<Kind, { title: string; body: string }> = {
+  new_trip: { title: 'Nuova uscita: {dove}', body: '{quando} · guida {guida}. Il posto davanti va a chi chiama Shotgun per primo.' },
+  shotgun: { title: '{chi} ha chiamato Shotgun!', body: 'Il posto davanti per {dove} è suo.' },
+  confirm: { title: 'Conferma il viaggio: {dove}', body: 'Era {quando}. Controllate km e pedaggi e confermate.' },
+  low: { title: 'Saldo {km} km', body: 'Sei sotto i −70 km: alla prossima uscita il volante è tuo.' },
+}
+const fill = (tpl: string, vars: Record<string, string>) => tpl.replace(/\{(\w+)\}/g, (m, k: string) => (k in vars ? vars[k] : m))
+async function texts(groupId: string, kind: Kind, vars: Record<string, string>) {
+  const { data } = await db.from('groups').select('settings').eq('id', groupId).maybeSingle()
+  const t = data?.settings?.notifyTexts?.[kind]
+  const use = t && typeof t.title === 'string' && t.title.trim() && typeof t.body === 'string' ? t : DEFAULTS[kind]
+  return { title: fill(use.title, vars).slice(0, 120), body: fill(use.body, vars).slice(0, 300) }
+}
+
 async function secret(name: string): Promise<string | null> {
   const { data } = await db.from('app_secrets').select('value').eq('name', name).maybeSingle()
   return data?.value ?? null
@@ -68,7 +85,7 @@ async function loadTrip(id: string) {
 }
 const when = (iso: string) => new Date(iso).toLocaleString('it-IT', { timeZone: 'Europe/Rome', weekday: 'short', day: 'numeric', month: 'short', hour: '2-digit', minute: '2-digit' })
 const driverOf = (t: any): string | null => (t.data?.legs ?? []).find((l: any) => l?.driverId)?.driverId ?? null
-const first = (name?: string) => (name ?? '').trim().split(/\s+/)[0] || 'Qualcuno'
+const nameOf = (name?: string) => (name ?? '').trim().replace(/\s+/g, ' ') || 'Qualcuno'
 
 Deno.serve(async (req) => {
   if (req.method === 'OPTIONS') return new Response('ok', { headers: cors })
@@ -86,11 +103,9 @@ Deno.serve(async (req) => {
         if (!(await once(`confirm:${t.id}`))) continue
         const ms = await groupMembers(t.group_id)
         const present = new Set<string>(t.data?.presentIds ?? [])
-        sent += await send(ms.filter((m) => present.has(m.id)).map((m) => m.user_id), {
-          title: `Conferma il viaggio: ${t.data?.dest?.name ?? 'uscita'}`,
-          body: `Era ${when(t.starts_at)}. Controllate km e pedaggi e confermate.`,
-          url: `?t=${t.id}`, tag: `confirm-${t.id}`,
-        })
+        const drv = ms.find((m) => m.id === driverOf(t))
+        const txt = await texts(t.group_id, 'confirm', { dove: t.data?.dest?.name ?? 'uscita', quando: when(t.starts_at), guida: drv ? nameOf(drv.name) : 'da decidere' })
+        sent += await send(ms.filter((m) => present.has(m.id)).map((m) => m.user_id), { ...txt, url: `?t=${t.id}`, tag: `confirm-${t.id}` })
       }
       return json({ sent })
     }
@@ -121,17 +136,18 @@ Deno.serve(async (req) => {
         // a chi viene ed è passeggero arriva anche il tasto «Shotgun!»
         const riders = others.filter((m) => present.has(m.id) && m.id !== driver)
         const rest = others.filter((m) => !riders.includes(m))
-        const base = { title: `Nuova uscita: ${dest}`, url: `?t=${t.id}`, tag: `trip-${t.id}` }
-        const guida = driver ? `guida ${first(byId.get(driver)?.name)}` : 'conducente da decidere'
-        const sent = (await send(riders.map((m) => m.user_id), { ...base, body: `${when(t.starts_at)} · ${guida}. Il posto davanti è libero: Shotgun!`, actions: [{ action: 'shotgun', title: 'Shotgun!' }] }))
-          + (await send(rest.map((m) => m.user_id), { ...base, body: `${when(t.starts_at)} · ${guida}` }))
+        const txt = await texts(t.group_id, 'new_trip', { dove: dest, quando: when(t.starts_at), guida: driver ? nameOf(byId.get(driver)?.name) : 'da decidere', chi: nameOf(me.name) })
+        const base = { ...txt, url: `?t=${t.id}`, tag: `trip-${t.id}` }
+        const sent = (await send(riders.map((m) => m.user_id), { ...base, actions: [{ action: 'shotgun', title: 'Shotgun!' }] }))
+          + (await send(rest.map((m) => m.user_id), base))
         return json({ sent })
       }
 
       const { data: claim } = await db.from('trip_shotgun').select('member_id').eq('trip_id', t.id).maybeSingle()
       if (!claim || claim.member_id !== me.id || !(await once(`shotgun:${t.id}`))) return json({ sent: 0 })
       const to = ms.filter((m) => m.id !== me.id && (present.has(m.id) || m.id === driver))
-      return json({ sent: await send(to.map((m) => m.user_id), { title: `${first(me.name)} ha chiamato Shotgun!`, body: `Il posto davanti per ${dest} è suo.`, url: `?t=${t.id}`, tag: `shotgun-${t.id}` }) })
+      const txt = await texts(t.group_id, 'shotgun', { chi: nameOf(me.name), dove: dest, quando: when(t.starts_at) })
+      return json({ sent: await send(to.map((m) => m.user_id), { ...txt, url: `?t=${t.id}`, tag: `shotgun-${t.id}` }) })
     }
 
     // Saldo sceso sotto −70 km: avviso a chi ci è finito (al massimo uno al giorno)
@@ -144,7 +160,8 @@ Deno.serve(async (req) => {
       if (!target || !Number.isFinite(km) || km > LOW_KM) return json({ sent: 0 })
       if (!(await once(`low:${target.id}:${new Date().toISOString().slice(0, 10)}`))) return json({ sent: 0 })
       const shown = km.toFixed(1).replace('.', ',').replace('-', '−')
-      return json({ sent: await send([target.user_id], { title: `Saldo ${shown} km`, body: 'Sei sotto i −70 km: alla prossima uscita il volante è tuo.', url: './', tag: `low-${target.id}` }) })
+      const txt = await texts(groupId, 'low', { chi: nameOf(target.name), km: shown })
+      return json({ sent: await send([target.user_id], { ...txt, url: './', tag: `low-${target.id}` }) })
     }
     return json({ error: 'richiesta sconosciuta' }, 400)
   } catch (e: any) {

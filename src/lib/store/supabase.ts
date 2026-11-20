@@ -28,7 +28,7 @@ const timedFetch: typeof fetch = (input, init) => {
   return fetch(input, { ...init, signal: ctl.signal }).finally(() => clearTimeout(t))
 }
 const toMember = (r: any): Member => ({ id: r.id, groupId: r.group_id, userId: r.user_id, name: r.name, color: r.color ?? 0, home: r.home, homeShared: !!r.home_shared, joinedAt: r.joined_at, leftAt: r.left_at })
-const toGroup = (r: any): Group => ({ id: r.id, name: r.name, inviteCode: r.invite_code, settings: r.settings ?? {} })
+const toGroup = (r: any): Group => ({ id: r.id, name: r.name, inviteCode: r.invite_code, settings: r.settings ?? {}, owner: r.owner ?? null })
 const toTrip = (r: any): Trip => ({ ...r.data, id: r.id, groupId: r.group_id, status: r.status, version: r.version, startsAt: r.starts_at, createdBy: r.created_by, updatedBy: r.updated_by, updatedAt: r.updated_at, confirmedAt: r.confirmed_at })
 const tripRow = (t: Trip) => ({
   id: t.id, group_id: t.groupId, status: t.status, starts_at: t.startsAt, created_by: t.createdBy, updated_by: t.updatedBy, confirmed_at: t.confirmedAt,
@@ -138,6 +138,7 @@ export function supabaseStore(url: string, key: string): Store {
       }
       if (Object.keys(upd).length) must(await sb.from('members').update(upd).eq('id', cur.id).select())
     },
+    async setNotifyTexts(groupId, texts) { must(await sb.rpc('set_notify_texts', { p_group: groupId, p_texts: texts })) },
     async setGroupToll(groupId, key, toll) { must(await sb.rpc('set_group_toll', { p_group: groupId, p_key: key, p_value: toll })) },
     async claimShotgun(_g, tripId) { const r = must(await sb.rpc('claim_shotgun', { p_trip: tripId })) as any; return r.member_id as string },
     async pushKey() {

@@ -7,7 +7,7 @@ import { Home } from './screens/Home'
 import { History, Members, Money, Places } from './screens/Others'
 import { Plan } from './screens/Plan'
 import { TripView } from './screens/TripView'
-import { Btn, Empty, Icon, Notice, Skel, ToastHost, ledHex, openSheets, reducedMotion, useBusy, useToast } from './ui/kit'
+import { Btn, Empty, Icon, Notice, Skel, ToastHost, openSheets, reducedMotion, useBusy, useToast } from './ui/kit'
 import { Tabs } from './ui/Tabs'
 
 export type Route =
@@ -245,7 +245,7 @@ function GroupProvider({ groupId, groups, switchGroup, deepTrip, missing, clearD
   const r = stack[stack.length - 1]
   return (
     <C.Provider value={ctx}>
-      {(TABS as readonly string[]).includes(r.s) && <Tabs index={tab} onIndex={goTab} color={ledHex(ctx.me)} tabs={TABS.map((k) => ({
+      {(TABS as readonly string[]).includes(r.s) && <Tabs index={tab} onIndex={goTab} tabs={TABS.map((k) => ({
         key: k, label: TAB_LABEL[k],
         page: k === 'home' ? <Home /> : k === 'history' ? <History /> : k === 'money' ? <Money /> : k === 'places' ? <Places /> : <Members />,
       }))} />}

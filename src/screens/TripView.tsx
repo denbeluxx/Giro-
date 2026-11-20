@@ -139,16 +139,16 @@ export function TripView({ id, fresh, autoShotgun }: { id: ID; fresh?: boolean; 
   const unknown = missingDriver || noStops
   const editAt = (at: 0 | 1 | 2) => push({ s: 'plan', mode: trip.status === 'planned' ? 'plan' : 'record', edit: trip, at })
 
-  const patch = (legs: Leg[], extra: Partial<Trip> = {}) => run(async () => {
+  const patch = (legs: Leg[], extra: Partial<Trip> = {}, done?: string) => run(async () => {
     const next = { ...trip, ...extra, legs }
     if (JSON.stringify([next.legs, next.status]) === JSON.stringify([trip.legs, trip.status]) && !Object.keys(extra).length) { setSheet(null); return } // niente da salvare
     ownSave.current = true
-    try { const saved = await saveTrip({ ...next, updatedBy: me.id, updatedAt: new Date().toISOString() }, trip.version); if (saved) setSheet(null) } finally { ownSave.current = false }
+    try { const saved = await saveTrip({ ...next, updatedBy: me.id, updatedAt: new Date().toISOString() }, trip.version); if (saved) { setSheet(null); if (done) toast(done, 'neg') } } finally { ownSave.current = false }
   })
   const confirm = () => run(async () => {
     const next: Trip = { ...trip, status: 'confirmed', confirmedAt: new Date().toISOString(), updatedBy: me.id, updatedAt: new Date().toISOString() }
     const saved = await saveTrip(next, trip.version)
-    if (saved) { setDone(tripEffect(saved)); toast(`Viaggio a ${trip.dest.name} confermato`) }
+    if (saved) { setDone(tripEffect(saved)); toast(`Viaggio a ${trip.dest.name} confermato`, 'pos') }
   })
   const saveTolls = (legs: Leg[], remember: Record<string, GroupToll>) => run(async () => {
     for (const [k, v] of Object.entries(remember)) await store.setGroupToll(data.group.id, k, v)
@@ -229,7 +229,7 @@ export function TripView({ id, fresh, autoShotgun }: { id: ID; fresh?: boolean; 
             : noStops ? <Btn onClick={() => editAt(2)}>Imposta la partenza</Btn>
             : !past ? <><p className="cta-hint">Potrete confermare il viaggio dopo la partenza.</p><Btn icon="wa" onClick={() => setSheet('share')}>Condividi il piano</Btn></>
             : missingRoute ? <Btn onClick={() => setSheet('km')}>Inserisci i km</Btn>
-            : <>{unpriced && <p className="cta-hint warn">Pedaggio senza importo: non sarà conteggiato finché non lo inserisci.</p>}<Btn busy={busy} icon="check" className="led-warn" onClick={confirm}>Conferma viaggio</Btn></>}
+            : <>{unpriced && <p className="cta-hint warn">Pedaggio senza importo: non sarà conteggiato finché non lo inserisci.</p>}<Btn busy={busy} icon="check" className="led-pos" onClick={confirm}>Conferma viaggio</Btn></>}
         </div>
       )}
 
@@ -239,7 +239,7 @@ export function TripView({ id, fresh, autoShotgun }: { id: ID; fresh?: boolean; 
       {sheet === 'detail' && <Sheet title="Variazione dei saldi" onClose={() => setSheet(null)}>
         <div className="list">{present.map((m) => <div className="row" key={m.id}><Avatar m={m} /><span className="grow t">{m.name}</span><span className="num" style={{ textAlign: 'right' }}><div className={tone(shown[m.id] ?? 0)} style={{ fontWeight: 600 }}>{fmtKmSigned(shown[m.id] ?? 0)}</div>{(fx.eur.get(m.id) ?? 0) !== 0 && <div className="s">{fmtEurSigned(fx.eur.get(m.id) ?? 0)}</div>}</span></div>)}</div>
         <p className="foot">Al conducente vanno i km validi; ogni occupante, conducente compreso, ne paga una quota uguale per i tratti percorsi.</p></Sheet>}
-      {sheet === 'cancel' && <Sheet title={trip.status === 'confirmed' ? 'Annullare il viaggio?' : 'Annullare l\'uscita?'} onClose={() => setSheet(null)} footer={<><Btn busy={busy} className="btn-danger" onClick={() => patch(trip.legs, { status: 'cancelled' })}>Annulla {trip.status === 'confirmed' ? 'viaggio' : 'uscita'}</Btn><div style={{ height: 8 }} /><Btn kind="gray" onClick={() => setSheet(null)}>Non annullare</Btn></>}>
+      {sheet === 'cancel' && <Sheet title={trip.status === 'confirmed' ? 'Annullare il viaggio?' : 'Annullare l\'uscita?'} onClose={() => setSheet(null)} footer={<><Btn busy={busy} className="btn-danger" onClick={() => patch(trip.legs, { status: 'cancelled' }, trip.status === 'confirmed' ? 'Viaggio annullato: tolto dai saldi' : 'Uscita annullata')}>Annulla {trip.status === 'confirmed' ? 'viaggio' : 'uscita'}</Btn><div style={{ height: 8 }} /><Btn kind="gray" onClick={() => setSheet(null)}>Non annullare</Btn></>}>
         <p style={{ margin: '0 4px', lineHeight: 1.4 }}>{trip.status === 'confirmed' ? 'Chilometri e pedaggi di questo viaggio vengono tolti dai saldi di tutti. Resta nello storico e si può ripristinare.' : 'L\'uscita resta nello storico come annullata. I saldi non cambiano.'}</p></Sheet>}
       {done && <Done trip={trip} fx={done} meId={me.id} onClose={home} />}
     </div>

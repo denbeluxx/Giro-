@@ -304,6 +304,43 @@ with sync_playwright() as p:
     swipe(pg, 180); ok(active_tab(pg) == 'Luoghi', 'a 320 px si scorre anche col dito')
     c6.close()
 
+    # --- Colori: azzurro per le azioni, verde e rosso per confermato e annullato ---
+    c7 = new_ctx(b); pg = c7.new_page(); pg.goto(SIM); hero(pg)
+    ok('56, 225, 255' in pg.evaluate("getComputedStyle(document.querySelector('.cta .btn')).boxShadow"), 'il pulsante principale («Organizza uscita») ha la luce azzurra dell\'app')
+    tap(pg, '.banner:has-text("Conferma il viaggio")', 900)
+    ok(pg.locator('.cta .btn.led-pos:has-text("Conferma viaggio")').count() == 1 and '61, 255, 138' in pg.evaluate("getComputedStyle(document.querySelector('.cta .btn.led-pos')).boxShadow"), '«Conferma viaggio» è verde')
+    tap(pg, '.row:has-text("Annulla uscita")', 500)
+    ok('255, 77, 94' in pg.evaluate("getComputedStyle(document.querySelector('.sheet .btn-danger')).boxShadow"), 'il pulsante per annullare è rosso')
+    tap(pg, '.sheet .btn:has-text("Annulla uscita")', 300)
+    ok(pg.locator('.toast.neg:has-text("Uscita annullata")').count() == 1, 'annullando compare un avviso rosso')
+    pg.wait_for_timeout(800)
+    ok(pg.locator('.pill.neg:has-text("Annullato")').count() == 1, 'lo stato «Annullato» è rosso')
+    tap(pg, '.nav-btn:has-text("Indietro")', 800); tab(pg, 'Storico')
+    ok(pg.locator(f'{CUR} .pill.neg:has-text("Annullato")').count() == 1 and pg.locator(f'{CUR} .pill.pos:has-text("Confermato")').count() >= 1, 'nello storico: annullati in rosso, confermati in verde')
+    shot(pg, '33-storico-colori')
+
+    # --- Testi delle notifiche scritti da chi ha creato il gruppo ---
+    tab(pg, 'Gruppo'); tap(pg, f'{CUR} .row:has-text("Testi delle notifiche")', 700)
+    ok(pg.locator('.sheet .nt-card').count() == 4, 'si possono scrivere i testi di tutte e 4 le notifiche')
+    card = '.sheet .nt-card:has-text("Shotgun preso")'
+    pg.fill(f'{card} input', 'Davanti ci va '); pg.click(f'{card} input'); pg.keyboard.press('End')
+    tap(pg, f'{card} .nt-var:has-text("{{chi}}")', 300)
+    ok(pg.input_value(f'{card} input') == 'Davanti ci va {chi}', 'un tocco su {chi} inserisce la parola nel testo')
+    ok('Davanti ci va Alessia' in pg.inner_text(f'{card} .nt-preview'), 'l\'anteprima mostra come arriverà la notifica')
+    pg.fill(f'{card} textarea', 'Destinazione {dove}, saldo {km}')
+    ok(pg.locator(f'{card} .nt-warn:has-text("{{km}}")').count() == 1 and pg.locator('.sheet .btn:has-text("Salva testi")').is_disabled(), 'una parola che non vale per quella notifica viene segnalata e blocca il salvataggio')
+    pg.fill(f'{card} textarea', 'Rassegnatevi, {dove} la vedete da dietro.'); shot(pg, '34-testi-notifiche')
+    tap(pg, '.sheet .btn:has-text("Salva testi")', 900)
+    nt = db(pg)['group']['settings'].get('notifyTexts', {})
+    ok(nt.get('shotgun') == {'title': 'Davanti ci va {chi}', 'body': 'Rassegnatevi, {dove} la vedete da dietro.'} and list(nt) == ['shotgun'], 'salvati solo i testi cambiati')
+    ok(pg.locator('.toast.pos:has-text("Testi delle notifiche salvati")').count() == 1, 'conferma in verde')
+    pg.wait_for_timeout(2600)
+    pg.locator('.chip:has-text("Matteo")').last.scroll_into_view_if_needed(); tap(pg, '.section:has-text("Modalità dimostrativa") .chip:has-text("Matteo")', 800)
+    ok('Li sceglie Daniele' in pg.inner_text(f'{CUR} .row:has-text("Testi delle notifiche")'), 'gli altri vedono che i testi li sceglie Daniele')
+    tap(pg, f'{CUR} .row:has-text("Testi delle notifiche")', 700)
+    ok(pg.locator('.sheet .btn:has-text("Salva testi")').count() == 0 and pg.locator(f'{card} input').get_attribute('readonly') is not None, 'e possono solo leggerli')
+    c7.close()
+
     # --- Build reale senza rete: il routing fallisce, i dati restano ---
     c4 = new_ctx(b); pg = c4.new_page(); pg.goto(REAL); hero(pg)
     tap(pg, 'text=Organizza uscita', 600)

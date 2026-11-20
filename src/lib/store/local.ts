@@ -80,7 +80,7 @@ function seed(): DB {
     trip('t-3', day(-9), 'confirmed', 'm-alessia', ['m-daniele', 'm-alessia', 'm-filippo'], places[1], true),
     trip('t-4', day(-1), 'planned', 'm-filippo', ['m-daniele', 'm-matteo', 'm-filippo', 'm-andrea'], places[0]),
   ]
-  return { groups: { [gid]: { group: { id: gid, name: 'Amici', inviteCode: 'demo1234', settings: {} }, members, places, trips, settlements: [] } } }
+  return { groups: { [gid]: { group: { id: gid, name: 'Amici', inviteCode: 'demo1234', settings: {}, owner: 'demo-user' }, members, places, trips, settlements: [] } } }
 }
 
 const wait = (ms = 220) => new Promise((r) => setTimeout(r, ms))
@@ -99,7 +99,7 @@ export const localStore: Store = {
   async listGroups() { return Object.values(read().groups).filter((g) => g.members.some((m) => m.userId === 'demo-user' && !m.leftAt)).map((g) => ({ id: g.group.id, name: g.group.name })) },
   async createGroup(name, myName) {
     const db = read(), id = uid()
-    db.groups[id] = { group: { id, name, inviteCode: uid().slice(0, 8), settings: {} }, members: [{ id: uid(), groupId: id, userId: 'demo-user', name: myName, color: 0, home: null, homeShared: false, joinedAt: new Date().toISOString(), leftAt: null }], places: [], trips: [], settlements: [] }
+    db.groups[id] = { group: { id, name, inviteCode: uid().slice(0, 8), settings: {}, owner: 'demo-user' }, members: [{ id: uid(), groupId: id, userId: 'demo-user', name: myName, color: 0, home: null, homeShared: false, joinedAt: new Date().toISOString(), leftAt: null }], places: [], trips: [], settlements: [] }
     write(db); return id
   },
   async previewInvite(code) {
@@ -157,6 +157,13 @@ export const localStore: Store = {
   async renameMember(groupId, id, name) { const db = read(); const m = db.groups[groupId].members.find((x) => x.id === id && !x.userId); if (!m) throw new Error('Questo membro ha già un account: può cambiare nome solo lui.'); m.name = name; write(db) },
   async removeMember(groupId, id) { const db = read(); const m = db.groups[groupId].members.find((x) => x.id === id && !x.userId); if (!m) throw new Error('Si possono togliere solo i membri senza account'); m.leftAt = new Date().toISOString(); write(db) },
   async updateMe(groupId, patch) { const db = read(); const g = db.groups[groupId]; const m = g.members.find((x) => x.id === meOf(g))!; Object.assign(m, patch); write(db) },
+  async setNotifyTexts(groupId, texts) {
+    const db = read(), g = db.groups[groupId]
+    if (g.members.find((m) => m.id === meOf(g))?.userId !== (g.group.owner ?? 'demo-user')) throw new Error('I testi delle notifiche li può cambiare solo chi ha creato il gruppo.')
+    const s = { ...g.group.settings }
+    if (texts && Object.keys(texts).length) s.notifyTexts = texts; else delete s.notifyTexts
+    g.group.settings = s; write(db)
+  },
   async setGroupToll(groupId, key, toll) { const db = read(); const g = db.groups[groupId].group; const t = { ...(g.settings.tolls ?? {}) }; if (toll) t[key] = toll; else delete t[key]; g.settings = { ...g.settings, tolls: t }; write(db) },
   async claimShotgun(groupId, tripId) {
     await wait(); const db = read(), g = db.groups[groupId]; const me = meOf(g)

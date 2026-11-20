@@ -1,3 +1,4 @@
+import type { NotifyTexts } from '../notifyTexts'
 import type { Group, GroupData, GroupSettings, GroupToll, ID, Member, Place, Settlement, Trip } from '../types'
 
 export class ConflictError extends Error {
@@ -45,6 +46,8 @@ export interface Store {
   updateGroup(groupId: ID, patch: { name?: string; settings?: GroupSettings }): Promise<Group>
   /** Aggiunge, cambia o (con null) toglie una sola tariffa del gruppo, senza toccare le altre. */
   setGroupToll(groupId: ID, key: string, toll: GroupToll | null): Promise<void>
+  /** Testi delle notifiche (solo chi ha creato il gruppo). null = testi predefiniti. */
+  setNotifyTexts(groupId: ID, texts: NotifyTexts | null): Promise<void>
 
   /** «Shotgun!»: prenota il posto davanti. Restituisce chi lo ha (il primo che lo ha chiamato). */
   claimShotgun(groupId: ID, tripId: ID): Promise<ID>
