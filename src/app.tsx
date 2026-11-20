@@ -227,7 +227,7 @@ function Auth({ invite, expired }: { invite: boolean; expired?: boolean }) {
   const [busy, run] = useBusy()
   return (
     <div className="screen"><div className="scroll" style={{ paddingTop: 'calc(var(--sat) + 72px)' }}>
-      <div className="avatar" style={{ width: 64, height: 64, borderRadius: 18, background: 'var(--satin) padding-box, var(--chrome-hi) border-box', boxShadow: '0 0 22px rgba(255, 255, 255, 0.14)', marginBottom: 20 }}><Icon n="car" size={34} /></div>
+      <img src={`${import.meta.env.BASE_URL}icon.svg`} alt="" width={72} height={72} style={{ display: 'block', borderRadius: 18, boxShadow: '0 0 0 1px rgba(255, 255, 255, 0.18), 0 0 26px rgba(56, 225, 255, 0.18)', marginBottom: 20 }} />
       <h1 className="title">Shotgun</h1>
       {expired && <div style={{ marginBottom: 16 }}><Notice kind="info">Sessione scaduta: accedi di nuovo. Le uscite in preparazione sono ancora salvate su questo telefono.</Notice></div>}
       <p className="subtitle" style={{ fontSize: 17, marginBottom: 28 }}>{invite ? 'Accedi per entrare nel gruppo che ti ha invitato.' : 'Chi guida stasera? Chilometri, turni e pedaggi tra amici.'}</p>
